@@ -4,9 +4,10 @@ import {
   FileText,
   FolderOpen,
   MessageSquarePlus,
+  StickyNote,
   Trash2,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -50,7 +51,11 @@ import type { MarkdownBlock } from "@/entities/markdown-block/model/types";
 import { formatAnnotationsForAgent } from "@/features/export-annotations/formatAnnotationsForAgent";
 import { parseMarkdownToBlocks } from "@/features/markdown-renderer/parseMarkdownToBlocks";
 import { openMarkdownDocument } from "@/features/open-document/openMarkdownDocument";
-import { MarkdownViewer, type MarkdownViewerBlockNote } from "@/shared/ui/MarkdownViewer";
+import {
+  MarkdownViewer,
+  type MarkdownViewerBlockNote,
+  type MarkdownViewerInlineAnnotation,
+} from "@/shared/ui/MarkdownViewer";
 
 const annotationTypes: Array<{ value: AnnotationType; label: string }> = [
   { value: "delete", label: "Delete" },
@@ -59,6 +64,22 @@ const annotationTypes: Array<{ value: AnnotationType; label: string }> = [
   { value: "note", label: "Note" },
   { value: "approve", label: "Approve" },
 ];
+
+type SelectionToolbarPosition = {
+  left: number;
+  top: number;
+};
+
+type SelectionHighlightRect = {
+  height: number;
+  left: number;
+  top: number;
+  width: number;
+};
+
+function isFullBlockAnnotation(annotation: AnnotationDraft, block: MarkdownBlock) {
+  return annotation.anchor.startOffset === 0 && annotation.anchor.endOffset === block.content.length;
+}
 
 function getSelectionAnchor(): AnnotationAnchor | null {
   const selection = window.getSelection();
@@ -94,6 +115,7 @@ function getSelectionAnchor(): AnnotationAnchor | null {
 }
 
 export function AnnotatorPage() {
+  const documentPaneRef = useRef<HTMLDivElement>(null);
   const [selectedExampleId, setSelectedExampleId] = useState(exampleMarkdownDocuments[0]?.id ?? "");
   const [document, setDocument] = useState<MarkdownDocument>(() => {
     const initial = exampleMarkdownDocuments[0];
@@ -108,6 +130,9 @@ export function AnnotatorPage() {
   const [annotationType, setAnnotationType] = useState<AnnotationType>("change-request");
   const [comment, setComment] = useState("");
   const [annotations, setAnnotations] = useState<AnnotationDraft[]>([]);
+  const [editingAnnotationId, setEditingAnnotationId] = useState<string | null>(null);
+  const [selectionHighlightRects, setSelectionHighlightRects] = useState<SelectionHighlightRect[]>([]);
+  const [selectionToolbarPosition, setSelectionToolbarPosition] = useState<SelectionToolbarPosition | null>(null);
   const [status, setStatus] = useState("예제 문서를 선택하거나 로컬 Markdown 파일을 열 수 있습니다.");
 
   const title = document.fileName;
@@ -121,13 +146,21 @@ export function AnnotatorPage() {
     [annotations],
   );
   const deletedBlockIds = useMemo(
-    () =>
-      new Set(
-        annotations
-          .filter((annotation) => annotation.type === "delete")
-          .map((annotation) => annotation.anchor.blockId),
-      ),
-    [annotations],
+    () => {
+      const fullBlockDeletes = annotations
+        .filter((annotation) => {
+          if (annotation.type !== "delete") {
+            return false;
+          }
+
+          const block = blocks.find((candidate) => candidate.id === annotation.anchor.blockId);
+          return block !== undefined && isFullBlockAnnotation(annotation, block);
+        })
+        .map((annotation) => annotation.anchor.blockId);
+
+      return new Set(fullBlockDeletes);
+    },
+    [annotations, blocks],
   );
   const noteAnnotationsByBlock = useMemo(() => {
     const notes = new Map<string, MarkdownViewerBlockNote[]>();
@@ -145,6 +178,35 @@ export function AnnotatorPage() {
 
     return notes;
   }, [annotations]);
+  const inlineAnnotationsByBlock = useMemo(() => {
+    const inlineAnnotations = new Map<string, MarkdownViewerInlineAnnotation[]>();
+
+    annotations
+      .filter((annotation) => annotation.type === "delete" || annotation.type === "note")
+      .forEach((annotation) => {
+        const block = blocks.find((candidate) => candidate.id === annotation.anchor.blockId);
+        if (
+          !block ||
+          annotation.anchor.startOffset === undefined ||
+          annotation.anchor.endOffset === undefined ||
+          isFullBlockAnnotation(annotation, block)
+        ) {
+          return;
+        }
+
+        const blockAnnotations = inlineAnnotations.get(annotation.anchor.blockId) ?? [];
+        blockAnnotations.push({
+          id: annotation.id,
+          comment: annotation.comment,
+          endOffset: annotation.anchor.endOffset,
+          startOffset: annotation.anchor.startOffset,
+          type: annotation.type,
+        });
+        inlineAnnotations.set(annotation.anchor.blockId, blockAnnotations);
+      });
+
+    return inlineAnnotations;
+  }, [annotations, blocks]);
 
   function loadExample(exampleId: string | null) {
     if (!exampleId) {
@@ -165,6 +227,9 @@ export function AnnotatorPage() {
     setAnnotations([]);
     setSelection("");
     setSelectionAnchor(null);
+    setSelectionHighlightRects([]);
+    setSelectionToolbarPosition(null);
+    setEditingAnnotationId(null);
     setComment("");
     setStatus(`${example.fileName} 예제를 불러왔습니다.`);
   }
@@ -180,6 +245,9 @@ export function AnnotatorPage() {
       setAnnotations([]);
       setSelection("");
       setSelectionAnchor(null);
+      setSelectionHighlightRects([]);
+      setSelectionToolbarPosition(null);
+      setEditingAnnotationId(null);
       setComment("");
       setStatus(`${opened.fileName} 파일을 열었습니다.`);
     } catch (error) {
@@ -202,6 +270,9 @@ export function AnnotatorPage() {
     const anchor = blockAnchor(block);
     setSelection(block.content);
     setSelectionAnchor(anchor);
+    setSelectionHighlightRects([]);
+    setSelectionToolbarPosition(null);
+    setEditingAnnotationId(null);
     setAnnotationType("note");
     setComment("");
     setStatus("블록 코멘트 입력을 시작했습니다.");
@@ -237,15 +308,123 @@ export function AnnotatorPage() {
   function captureSelection() {
     const anchor = getSelectionAnchor();
     if (anchor?.selectedText) {
+      const selectionRange = window.getSelection()?.rangeCount ? window.getSelection()?.getRangeAt(0) : null;
+      const rangeRect = selectionRange?.getBoundingClientRect();
+      const rangeRects = selectionRange ? Array.from(selectionRange.getClientRects()) : [];
+      const paneRect = documentPaneRef.current?.getBoundingClientRect();
+
       setSelection(anchor.selectedText);
       setSelectionAnchor(anchor);
+      setSelectionHighlightRects(
+        paneRect
+          ? rangeRects.map((rect) => ({
+              height: rect.height,
+              left: rect.left - paneRect.left,
+              top: rect.top - paneRect.top,
+              width: rect.width,
+            }))
+          : [],
+      );
+      setSelectionToolbarPosition(
+        rangeRect && paneRect
+          ? {
+              left: rangeRect.right - paneRect.left + 8,
+              top: rangeRect.top - paneRect.top,
+            }
+          : null,
+      );
       setStatus("선택 anchor를 저장했습니다.");
+      return;
     }
+
+    setSelectionToolbarPosition(null);
+    setSelectionHighlightRects([]);
+  }
+
+  function requestSelectionNote() {
+    if (!selection || !selectionAnchor) {
+      setStatus("텍스트를 선택하세요.");
+      return;
+    }
+
+    setAnnotationType("note");
+    setComment("");
+    setEditingAnnotationId(null);
+    setSelectionToolbarPosition(null);
+    setStatus("선택 영역 노트 입력을 시작했습니다.");
+  }
+
+  function requestSelectionDelete() {
+    if (!selection || !selectionAnchor) {
+      setStatus("텍스트를 선택하세요.");
+      return;
+    }
+
+    setAnnotations((current) => [
+      ...current,
+      {
+        id: crypto.randomUUID(),
+        fileName: document.fileName,
+        anchor: selectionAnchor,
+        selectedText: selection,
+        comment: "Remove this selection.",
+        type: "delete",
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+    setSelection("");
+    setSelectionAnchor(null);
+    setSelectionHighlightRects([]);
+    setSelectionToolbarPosition(null);
+    setEditingAnnotationId(null);
+    window.getSelection()?.removeAllRanges();
+    setStatus("선택 영역 삭제 annotation을 추가했습니다.");
+  }
+
+  function editInlineAnnotation(annotationId: string) {
+    const annotation = annotations.find((candidate) => candidate.id === annotationId);
+    if (!annotation || annotation.type !== "note") {
+      return;
+    }
+
+    setSelection(annotation.selectedText);
+    setSelectionAnchor(annotation.anchor);
+    setAnnotationType("note");
+    setComment(annotation.comment);
+    setEditingAnnotationId(annotation.id);
+    setSelectionHighlightRects([]);
+    setSelectionToolbarPosition(null);
+    setStatus("노트 annotation 수정 모드입니다.");
   }
 
   function addAnnotation() {
     if (!selection || !selectionAnchor || !comment.trim()) {
       setStatus("텍스트를 선택하고 comment를 입력하세요.");
+      return;
+    }
+
+    if (editingAnnotationId) {
+      setAnnotations((current) =>
+        current.map((annotation) =>
+          annotation.id === editingAnnotationId
+            ? {
+                ...annotation,
+                anchor: selectionAnchor,
+                selectedText: selection,
+                comment: comment.trim(),
+                type: annotationType,
+              }
+            : annotation,
+        ),
+      );
+      setComment("");
+      setSelection("");
+      setSelectionAnchor(null);
+      setSelectionHighlightRects([]);
+      setSelectionToolbarPosition(null);
+      setEditingAnnotationId(null);
+      window.getSelection()?.removeAllRanges();
+      setStatus("Annotation을 수정했습니다.");
       return;
     }
 
@@ -264,12 +443,21 @@ export function AnnotatorPage() {
     setComment("");
     setSelection("");
     setSelectionAnchor(null);
+    setSelectionHighlightRects([]);
+    setSelectionToolbarPosition(null);
+    setEditingAnnotationId(null);
     window.getSelection()?.removeAllRanges();
     setStatus("Annotation을 추가했습니다.");
   }
 
   function deleteAnnotation(annotationId: string) {
     setAnnotations((current) => current.filter((annotation) => annotation.id !== annotationId));
+    if (editingAnnotationId === annotationId) {
+      setEditingAnnotationId(null);
+      setSelection("");
+      setSelectionAnchor(null);
+      setComment("");
+    }
     setStatus("Annotation을 삭제했습니다.");
   }
 
@@ -320,7 +508,7 @@ export function AnnotatorPage() {
       <section className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_420px]">
         <div className="min-h-0 bg-muted/30">
           <ScrollArea className="h-full">
-            <div className="mx-auto max-w-5xl p-6" onMouseUp={captureSelection}>
+            <div className="relative mx-auto max-w-5xl p-6" ref={documentPaneRef} onMouseUp={captureSelection}>
               <Card>
                 <CardHeader>
                   <CardTitle>{title}</CardTitle>
@@ -334,12 +522,62 @@ export function AnnotatorPage() {
                     blocks={blocks}
                     annotatedBlockIds={annotatedBlockIds}
                     deletedBlockIds={deletedBlockIds}
+                    inlineAnnotationsByBlock={inlineAnnotationsByBlock}
                     noteAnnotationsByBlock={noteAnnotationsByBlock}
+                    onCancelInlineAnnotation={deleteAnnotation}
+                    onEditInlineAnnotation={editInlineAnnotation}
                     onRequestBlockComment={requestBlockComment}
                     onRequestBlockDelete={requestBlockDelete}
                   />
                 </CardContent>
               </Card>
+              {selectionHighlightRects.map((rect, index) => (
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute bg-yellow-200/50"
+                  key={`${rect.left}-${rect.top}-${index}`}
+                  style={{
+                    height: rect.height,
+                    left: rect.left,
+                    top: rect.top,
+                    width: rect.width,
+                  }}
+                />
+              ))}
+              {selectionToolbarPosition ? (
+                <div
+                  className="absolute flex items-center gap-1 rounded-lg border bg-popover p-1 shadow-sm"
+                  style={{
+                    left: selectionToolbarPosition.left,
+                    top: selectionToolbarPosition.top,
+                  }}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }}
+                  onMouseUp={(event) => event.stopPropagation()}
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <Button
+                    aria-label="Delete selected text"
+                    size="icon-sm"
+                    type="button"
+                    variant="ghost"
+                    onClick={requestSelectionDelete}
+                  >
+                    <Trash2 aria-hidden="true" />
+                  </Button>
+                  <Button
+                    aria-label="Add note to selected text"
+                    size="icon-sm"
+                    type="button"
+                    variant="ghost"
+                    onClick={requestSelectionNote}
+                  >
+                    <StickyNote aria-hidden="true" />
+                  </Button>
+                </div>
+              ) : null}
             </div>
           </ScrollArea>
         </div>
@@ -411,7 +649,7 @@ export function AnnotatorPage() {
                         </Field>
                         <Button type="button" onClick={addAnnotation}>
                           <MessageSquarePlus data-icon="inline-start" aria-hidden="true" />
-                          Add annotation
+                          {editingAnnotationId ? "Save annotation" : "Add annotation"}
                         </Button>
                       </FieldGroup>
                     </CardContent>

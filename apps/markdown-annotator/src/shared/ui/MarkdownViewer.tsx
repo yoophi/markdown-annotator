@@ -1,15 +1,24 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { ElementType } from "react";
-import { MessageSquare, StickyNote, Trash2 } from "lucide-react";
+import { MessageSquare, Pencil, StickyNote, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import type { AnnotationType } from "@/entities/annotation/model/types";
 import type { MarkdownBlock } from "@/entities/markdown-block/model/types";
 import { cn } from "@/lib/utils";
+
+export type MarkdownViewerInlineAnnotation = {
+  id: string;
+  comment: string;
+  endOffset: number;
+  startOffset: number;
+  type: AnnotationType;
+};
 
 export type MarkdownViewerBlockNote = {
   id: string;
@@ -20,12 +29,159 @@ type MarkdownViewerProps = {
   blocks: MarkdownBlock[];
   annotatedBlockIds?: Set<string>;
   deletedBlockIds?: Set<string>;
+  inlineAnnotationsByBlock?: ReadonlyMap<string, MarkdownViewerInlineAnnotation[]>;
   noteAnnotationsByBlock?: ReadonlyMap<string, MarkdownViewerBlockNote[]>;
+  onCancelInlineAnnotation?: (annotationId: string) => void;
+  onEditInlineAnnotation?: (annotationId: string) => void;
   onRequestBlockComment?: (block: MarkdownBlock) => void;
   onRequestBlockDelete?: (block: MarkdownBlock) => void;
 };
 
-function InlineMarkdown({ children }: { children: string }) {
+function InlineAnnotationMark({
+  annotation,
+  children,
+  onCancelInlineAnnotation,
+  onEditInlineAnnotation,
+}: {
+  annotation: MarkdownViewerInlineAnnotation;
+  children: string;
+  onCancelInlineAnnotation?: (annotationId: string) => void;
+  onEditInlineAnnotation?: (annotationId: string) => void;
+}) {
+  const isDelete = annotation.type === "delete";
+  const isNote = annotation.type === "note";
+  const handleActionMouseDown = (event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+  const mark = (
+    <mark
+      className={cn(
+        "group/inline-annotation relative inline-block px-0.5",
+        isDelete &&
+          "bg-transparent text-destructive line-through decoration-destructive decoration-2 [&_*]:text-destructive",
+        isNote &&
+          "relative bg-yellow-200 text-foreground after:absolute after:right-0 after:top-0 after:size-0 after:border-l-[7px] after:border-t-[7px] after:border-l-transparent after:border-t-yellow-600",
+      )}
+      data-annotation-id={annotation.id}
+    >
+      {children}
+      <span
+        className="absolute -right-3 top-0 hidden translate-x-full -translate-y-1/2 items-center gap-1 rounded-lg border bg-popover p-1 shadow-sm before:absolute before:-left-3 before:top-0 before:h-full before:w-3 before:content-[''] group-hover/inline-annotation:inline-flex group-focus-within/inline-annotation:inline-flex"
+        onMouseDown={handleActionMouseDown}
+        onMouseUp={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
+      >
+        {isNote ? (
+          <Button
+            aria-label="Edit note annotation"
+            size="icon-xs"
+            type="button"
+            variant="ghost"
+            onClick={() => onEditInlineAnnotation?.(annotation.id)}
+          >
+            <Pencil aria-hidden="true" />
+          </Button>
+        ) : null}
+        <Button
+          aria-label={isDelete ? "Cancel delete annotation" : "Delete note annotation"}
+          size="icon-xs"
+          type="button"
+          variant={isDelete ? "destructive" : "ghost"}
+          onClick={() => onCancelInlineAnnotation?.(annotation.id)}
+        >
+          {isDelete ? <X aria-hidden="true" /> : <Trash2 aria-hidden="true" />}
+        </Button>
+      </span>
+    </mark>
+  );
+
+  if (isDelete) {
+    return mark;
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger render={mark} />
+      <TooltipContent className="max-w-sm">
+        <p>{annotation.comment}</p>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function AnnotatedText({
+  annotations,
+  children,
+  onCancelInlineAnnotation,
+  onEditInlineAnnotation,
+}: {
+  annotations: MarkdownViewerInlineAnnotation[];
+  children: string;
+  onCancelInlineAnnotation?: (annotationId: string) => void;
+  onEditInlineAnnotation?: (annotationId: string) => void;
+}) {
+  const sortedAnnotations = [...annotations]
+    .filter((annotation) => annotation.endOffset > annotation.startOffset)
+    .sort((a, b) => a.startOffset - b.startOffset);
+  const segments: React.ReactNode[] = [];
+  let cursor = 0;
+
+  sortedAnnotations.forEach((annotation) => {
+    const startOffset = Math.max(0, Math.min(annotation.startOffset, children.length));
+    const endOffset = Math.max(startOffset, Math.min(annotation.endOffset, children.length));
+
+    if (startOffset < cursor || startOffset === endOffset) {
+      return;
+    }
+
+    if (cursor < startOffset) {
+      segments.push(children.slice(cursor, startOffset));
+    }
+
+    segments.push(
+      <InlineAnnotationMark
+        annotation={annotation}
+        key={annotation.id}
+        onCancelInlineAnnotation={onCancelInlineAnnotation}
+        onEditInlineAnnotation={onEditInlineAnnotation}
+      >
+        {children.slice(startOffset, endOffset)}
+      </InlineAnnotationMark>,
+    );
+    cursor = endOffset;
+  });
+
+  if (cursor < children.length) {
+    segments.push(children.slice(cursor));
+  }
+
+  return <>{segments}</>;
+}
+
+function InlineMarkdown({
+  annotations = [],
+  children,
+  onCancelInlineAnnotation,
+  onEditInlineAnnotation,
+}: {
+  annotations?: MarkdownViewerInlineAnnotation[];
+  children: string;
+  onCancelInlineAnnotation?: (annotationId: string) => void;
+  onEditInlineAnnotation?: (annotationId: string) => void;
+}) {
+  if (annotations.length > 0) {
+    return (
+      <AnnotatedText
+        annotations={annotations}
+        onCancelInlineAnnotation={onCancelInlineAnnotation}
+        onEditInlineAnnotation={onEditInlineAnnotation}
+      >
+        {children}
+      </AnnotatedText>
+    );
+  }
+
   return (
     <ReactMarkdown
       components={{
@@ -42,6 +198,7 @@ function BlockShell({
   block,
   annotated,
   deleted,
+  inlineAnnotations,
   notes,
   children,
   onRequestBlockComment,
@@ -50,8 +207,11 @@ function BlockShell({
   block: MarkdownBlock;
   annotated: boolean;
   deleted: boolean;
+  inlineAnnotations: MarkdownViewerInlineAnnotation[];
   notes: MarkdownViewerBlockNote[];
   children: React.ReactNode;
+  onCancelInlineAnnotation?: (annotationId: string) => void;
+  onEditInlineAnnotation?: (annotationId: string) => void;
   onRequestBlockComment?: (block: MarkdownBlock) => void;
   onRequestBlockDelete?: (block: MarkdownBlock) => void;
 }) {
@@ -164,7 +324,6 @@ function BlockShell({
           deleted &&
             "text-destructive line-through decoration-destructive opacity-70 [&_*]:text-destructive",
         )}
-        data-block-content
       >
         {children}
       </div>
@@ -176,14 +335,20 @@ function MarkdownBlockRenderer({
   block,
   annotated,
   deleted,
+  inlineAnnotations,
   notes,
+  onCancelInlineAnnotation,
+  onEditInlineAnnotation,
   onRequestBlockComment,
   onRequestBlockDelete,
 }: {
   block: MarkdownBlock;
   annotated: boolean;
   deleted: boolean;
+  inlineAnnotations: MarkdownViewerInlineAnnotation[];
   notes: MarkdownViewerBlockNote[];
+  onCancelInlineAnnotation?: (annotationId: string) => void;
+  onEditInlineAnnotation?: (annotationId: string) => void;
   onRequestBlockComment?: (block: MarkdownBlock) => void;
   onRequestBlockDelete?: (block: MarkdownBlock) => void;
 }) {
@@ -195,12 +360,21 @@ function MarkdownBlockRenderer({
           annotated={annotated}
           block={block}
           deleted={deleted}
+          inlineAnnotations={inlineAnnotations}
           notes={notes}
+          onCancelInlineAnnotation={onCancelInlineAnnotation}
+          onEditInlineAnnotation={onEditInlineAnnotation}
           onRequestBlockComment={onRequestBlockComment}
           onRequestBlockDelete={onRequestBlockDelete}
         >
-          <Tag>
-            <InlineMarkdown>{block.content}</InlineMarkdown>
+          <Tag data-block-content>
+            <InlineMarkdown
+              annotations={inlineAnnotations}
+              onCancelInlineAnnotation={onCancelInlineAnnotation}
+              onEditInlineAnnotation={onEditInlineAnnotation}
+            >
+              {block.content}
+            </InlineMarkdown>
           </Tag>
         </BlockShell>
       );
@@ -212,12 +386,21 @@ function MarkdownBlockRenderer({
           annotated={annotated}
           block={block}
           deleted={deleted}
+          inlineAnnotations={inlineAnnotations}
           notes={notes}
+          onCancelInlineAnnotation={onCancelInlineAnnotation}
+          onEditInlineAnnotation={onEditInlineAnnotation}
           onRequestBlockComment={onRequestBlockComment}
           onRequestBlockDelete={onRequestBlockDelete}
         >
-          <blockquote>
-            <InlineMarkdown>{block.content}</InlineMarkdown>
+          <blockquote data-block-content>
+            <InlineMarkdown
+              annotations={inlineAnnotations}
+              onCancelInlineAnnotation={onCancelInlineAnnotation}
+              onEditInlineAnnotation={onEditInlineAnnotation}
+            >
+              {block.content}
+            </InlineMarkdown>
           </blockquote>
         </BlockShell>
       );
@@ -228,7 +411,10 @@ function MarkdownBlockRenderer({
           annotated={annotated}
           block={block}
           deleted={deleted}
+          inlineAnnotations={inlineAnnotations}
           notes={notes}
+          onCancelInlineAnnotation={onCancelInlineAnnotation}
+          onEditInlineAnnotation={onEditInlineAnnotation}
           onRequestBlockComment={onRequestBlockComment}
           onRequestBlockDelete={onRequestBlockDelete}
         >
@@ -239,8 +425,14 @@ function MarkdownBlockRenderer({
             <span className="mt-0.5 text-muted-foreground">
               {block.ordered ? `${block.orderedStart ?? 1}.` : "-"}
             </span>
-            <div className={cn(block.checked && "text-muted-foreground line-through")}>
-              <InlineMarkdown>{block.content}</InlineMarkdown>
+            <div className={cn(block.checked && "text-muted-foreground line-through")} data-block-content>
+              <InlineMarkdown
+                annotations={inlineAnnotations}
+                onCancelInlineAnnotation={onCancelInlineAnnotation}
+                onEditInlineAnnotation={onEditInlineAnnotation}
+              >
+                {block.content}
+              </InlineMarkdown>
             </div>
           </div>
         </BlockShell>
@@ -252,12 +444,23 @@ function MarkdownBlockRenderer({
           annotated={annotated}
           block={block}
           deleted={deleted}
+          inlineAnnotations={inlineAnnotations}
           notes={notes}
+          onCancelInlineAnnotation={onCancelInlineAnnotation}
+          onEditInlineAnnotation={onEditInlineAnnotation}
           onRequestBlockComment={onRequestBlockComment}
           onRequestBlockDelete={onRequestBlockDelete}
         >
           <pre>
-            <code>{block.content}</code>
+            <code data-block-content>
+              <AnnotatedText
+                annotations={inlineAnnotations}
+                onCancelInlineAnnotation={onCancelInlineAnnotation}
+                onEditInlineAnnotation={onEditInlineAnnotation}
+              >
+                {block.content}
+              </AnnotatedText>
+            </code>
           </pre>
         </BlockShell>
       );
@@ -268,11 +471,16 @@ function MarkdownBlockRenderer({
           annotated={annotated}
           block={block}
           deleted={deleted}
+          inlineAnnotations={inlineAnnotations}
           notes={notes}
+          onCancelInlineAnnotation={onCancelInlineAnnotation}
+          onEditInlineAnnotation={onEditInlineAnnotation}
           onRequestBlockComment={onRequestBlockComment}
           onRequestBlockDelete={onRequestBlockDelete}
         >
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{block.content}</ReactMarkdown>
+          <div data-block-content>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{block.content}</ReactMarkdown>
+          </div>
         </BlockShell>
       );
 
@@ -282,7 +490,10 @@ function MarkdownBlockRenderer({
           annotated={annotated}
           block={block}
           deleted={deleted}
+          inlineAnnotations={inlineAnnotations}
           notes={notes}
+          onCancelInlineAnnotation={onCancelInlineAnnotation}
+          onEditInlineAnnotation={onEditInlineAnnotation}
           onRequestBlockComment={onRequestBlockComment}
           onRequestBlockDelete={onRequestBlockDelete}
         >
@@ -297,12 +508,21 @@ function MarkdownBlockRenderer({
           annotated={annotated}
           block={block}
           deleted={deleted}
+          inlineAnnotations={inlineAnnotations}
           notes={notes}
+          onCancelInlineAnnotation={onCancelInlineAnnotation}
+          onEditInlineAnnotation={onEditInlineAnnotation}
           onRequestBlockComment={onRequestBlockComment}
           onRequestBlockDelete={onRequestBlockDelete}
         >
-          <p>
-            <InlineMarkdown>{block.content}</InlineMarkdown>
+          <p data-block-content>
+            <InlineMarkdown
+              annotations={inlineAnnotations}
+              onCancelInlineAnnotation={onCancelInlineAnnotation}
+              onEditInlineAnnotation={onEditInlineAnnotation}
+            >
+              {block.content}
+            </InlineMarkdown>
           </p>
         </BlockShell>
       );
@@ -313,7 +533,10 @@ export function MarkdownViewer({
   blocks,
   annotatedBlockIds = new Set(),
   deletedBlockIds = new Set(),
+  inlineAnnotationsByBlock = new Map(),
   noteAnnotationsByBlock = new Map(),
+  onCancelInlineAnnotation,
+  onEditInlineAnnotation,
   onRequestBlockComment,
   onRequestBlockDelete,
 }: MarkdownViewerProps) {
@@ -324,8 +547,11 @@ export function MarkdownViewer({
           annotated={annotatedBlockIds.has(block.id)}
           block={block}
           deleted={deletedBlockIds.has(block.id)}
+          inlineAnnotations={inlineAnnotationsByBlock.get(block.id) ?? []}
           key={block.id}
           notes={noteAnnotationsByBlock.get(block.id) ?? []}
+          onCancelInlineAnnotation={onCancelInlineAnnotation}
+          onEditInlineAnnotation={onEditInlineAnnotation}
           onRequestBlockComment={onRequestBlockComment}
           onRequestBlockDelete={onRequestBlockDelete}
         />

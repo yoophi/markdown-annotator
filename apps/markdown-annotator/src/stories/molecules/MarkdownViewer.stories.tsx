@@ -45,6 +45,36 @@ export const BlockActions: Story = {
   args: {
     blocks: blockActionBlocks,
     deletedBlockIds: new Set(blockActionBlocks[1] ? [blockActionBlocks[1].id] : []),
+    inlineAnnotationsByBlock: new Map(
+      blockActionBlocks[1] && blockActionBlocks[2]
+        ? [
+            [
+              blockActionBlocks[1].id,
+              [
+                {
+                  id: "inline-delete-1",
+                  comment: "Remove this selected text.",
+                  startOffset: 6,
+                  endOffset: 20,
+                  type: "delete",
+                },
+              ],
+            ],
+            [
+              blockActionBlocks[2].id,
+              [
+                {
+                  id: "inline-note-1",
+                  comment: "This selected range has a note.",
+                  startOffset: 5,
+                  endOffset: 16,
+                  type: "note",
+                },
+              ],
+            ],
+          ]
+        : [],
+    ),
     noteAnnotationsByBlock: new Map(
       blockActionBlocks[2]
         ? [
@@ -60,6 +90,12 @@ export const BlockActions: Story = {
           ]
         : [],
     ),
+    onCancelInlineAnnotation: (annotationId) => {
+      console.log("cancel inline annotation", annotationId);
+    },
+    onEditInlineAnnotation: (annotationId) => {
+      console.log("edit inline annotation", annotationId);
+    },
     onRequestBlockComment: (block) => {
       console.log("comment block", block.id);
     },
