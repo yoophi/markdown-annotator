@@ -1,196 +1,201 @@
 @import "@fontsource-variable/geist";
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
 
 :root {
-  font-family: "Geist Variable", system-ui, sans-serif;
-  color: #1b1f24;
-  background: #f6f7f9;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
 }
 
-* {
-  box-sizing: border-box;
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
 }
 
-body {
-  margin: 0;
-  min-width: 960px;
-  min-height: 100vh;
+@theme inline {
+  --font-heading: var(--font-sans);
+  --font-sans: "Geist Variable", sans-serif;
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-button,
-textarea {
-  font: inherit;
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    @apply font-sans;
+  }
+
+  body {
+    @apply m-0 min-h-screen bg-background text-foreground;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
 }
 
-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 34px;
-  border: 1px solid #c9d1d9;
-  border-radius: 6px;
-  padding: 0 12px;
-  color: #1b1f24;
-  background: #ffffff;
-  cursor: pointer;
-}
+@layer components {
+  .markdown-viewer {
+    @apply text-sm leading-7 text-foreground;
+  }
 
-button:hover {
-  background: #f0f3f6;
-}
+  .markdown-viewer h1 {
+    @apply mb-4 mt-0 text-3xl font-semibold tracking-normal;
+  }
 
-textarea {
-  width: 100%;
-  resize: vertical;
-  border: 1px solid #c9d1d9;
-  border-radius: 6px;
-  padding: 10px;
-}
+  .markdown-viewer h2 {
+    @apply mb-3 mt-8 border-b pb-2 text-2xl font-semibold tracking-normal;
+  }
 
-.app-shell {
-  display: grid;
-  grid-template-rows: auto 1fr auto;
-  height: 100vh;
-}
+  .markdown-viewer h3 {
+    @apply mb-2 mt-6 text-xl font-semibold tracking-normal;
+  }
 
-.toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid #d8dee4;
-  padding: 12px 16px;
-  background: #ffffff;
-}
+  .markdown-viewer p {
+    @apply my-4;
+  }
 
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
+  .markdown-viewer ul,
+  .markdown-viewer ol {
+    @apply my-4 flex flex-col gap-2 pl-6;
+  }
 
-.brand h1 {
-  margin: 0;
-  font-size: 16px;
-  line-height: 1.3;
-}
+  .markdown-viewer ul {
+    @apply list-disc;
+  }
 
-.brand p {
-  margin: 2px 0 0;
-  color: #57606a;
-  font-size: 13px;
-}
+  .markdown-viewer ol {
+    @apply list-decimal;
+  }
 
-.toolbar-actions {
-  display: flex;
-  gap: 8px;
-}
+  .markdown-viewer blockquote {
+    @apply my-4 border-l-4 border-primary/40 bg-muted/60 py-2 pl-4 text-muted-foreground;
+  }
 
-.workspace {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
-  min-height: 0;
-}
+  .markdown-viewer pre {
+    @apply my-4 overflow-x-auto rounded-lg bg-muted p-4 text-xs;
+  }
 
-.document-pane {
-  overflow: auto;
-  padding: 32px;
-}
+  .markdown-viewer code {
+    @apply rounded bg-muted px-1 py-0.5 text-xs;
+  }
 
-.markdown-viewer {
-  max-width: 860px;
-  margin: 0 auto;
-  border: 1px solid #d8dee4;
-  border-radius: 8px;
-  padding: 28px 34px;
-  background: #ffffff;
-}
+  .markdown-viewer pre code {
+    @apply bg-transparent p-0;
+  }
 
-.markdown-viewer h1,
-.markdown-viewer h2,
-.markdown-viewer h3 {
-  margin-top: 1.2em;
-  margin-bottom: 0.45em;
-}
+  .markdown-viewer table {
+    @apply my-4 w-full border-collapse text-sm;
+  }
 
-.markdown-viewer h1:first-child {
-  margin-top: 0;
-}
+  .markdown-viewer th,
+  .markdown-viewer td {
+    @apply border px-3 py-2 text-left align-top;
+  }
 
-.markdown-viewer p,
-.markdown-viewer li {
-  line-height: 1.7;
-}
-
-.markdown-viewer blockquote {
-  margin: 20px 0;
-  border-left: 4px solid #2da44e;
-  padding: 8px 16px;
-  color: #57606a;
-  background: #f6f8fa;
-}
-
-.sidebar {
-  display: grid;
-  align-content: start;
-  gap: 12px;
-  overflow: auto;
-  border-left: 1px solid #d8dee4;
-  padding: 16px;
-  background: #ffffff;
-}
-
-.panel {
-  display: grid;
-  gap: 10px;
-}
-
-.panel h2 {
-  margin: 0;
-  font-size: 14px;
-}
-
-.selected-text,
-.empty {
-  margin: 0;
-  border: 1px solid #d8dee4;
-  border-radius: 6px;
-  padding: 10px;
-  color: #57606a;
-  background: #f6f8fa;
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.annotations {
-  border-top: 1px solid #d8dee4;
-  padding-top: 14px;
-}
-
-.annotation-item {
-  border: 1px solid #d8dee4;
-  border-radius: 8px;
-  padding: 12px;
-}
-
-.annotation-item strong {
-  display: block;
-  font-size: 13px;
-}
-
-.annotation-item p {
-  margin: 6px 0 0;
-  color: #57606a;
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.status-bar {
-  border-top: 1px solid #d8dee4;
-  padding: 8px 16px;
-  color: #57606a;
-  background: #ffffff;
-  font-size: 12px;
+  .markdown-viewer th {
+    @apply bg-muted font-medium;
+  }
 }

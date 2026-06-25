@@ -13,7 +13,8 @@
     "moduleResolution": "Bundler",
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@examples/*": ["../../examples/*"]
     },
     "resolveJsonModule": true,
     "isolatedModules": true,
