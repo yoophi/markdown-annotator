@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-read-markdown-file"
+description = "Allows the frontend to read a selected Markdown file through the app command."
+commands.allow = ["read_markdown_file"]
