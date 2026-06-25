@@ -37,6 +37,9 @@ type MarkdownViewerProps = {
   onRequestBlockDelete?: (block: MarkdownBlock) => void;
 };
 
+const deleteAnnotationClassName =
+  "text-destructive line-through decoration-destructive decoration-2 [&_*]:text-destructive";
+
 function InlineAnnotationMark({
   annotation,
   children,
@@ -58,8 +61,7 @@ function InlineAnnotationMark({
     <mark
       className={cn(
         "group/inline-annotation relative inline-block px-0.5",
-        isDelete &&
-          "bg-transparent text-destructive line-through decoration-destructive decoration-2 [&_*]:text-destructive",
+        isDelete && cn("bg-transparent", deleteAnnotationClassName),
         isNote &&
           "relative bg-yellow-200 text-foreground after:absolute after:right-0 after:top-0 after:size-0 after:border-l-[7px] after:border-t-[7px] after:border-l-transparent after:border-t-yellow-600",
       )}
@@ -322,8 +324,7 @@ function BlockShell({
       <div
         className={cn(
           "relative z-0",
-          deleted &&
-            "text-destructive line-through decoration-destructive opacity-70 [&_*]:text-destructive",
+          deleted && deleteAnnotationClassName,
         )}
       >
         {children}
