@@ -47,6 +47,7 @@ import type { AnnotationAnchor, AnnotationDraft, AnnotationType } from "@/entiti
 import { exampleMarkdownDocuments } from "@/entities/document/model/examples";
 import type { MarkdownDocument } from "@/entities/document/model/types";
 import { formatAnnotationsForAgent } from "@/features/export-annotations/formatAnnotationsForAgent";
+import { parseMarkdownToBlocks } from "@/features/markdown-renderer/parseMarkdownToBlocks";
 import { openMarkdownDocument } from "@/features/open-document/openMarkdownDocument";
 import { MarkdownViewer } from "@/shared/ui/MarkdownViewer";
 
@@ -69,21 +70,24 @@ function getSelectionAnchor(): AnnotationAnchor | null {
     range.startContainer.nodeType === Node.TEXT_NODE
       ? range.startContainer.parentElement
       : (range.startContainer as Element);
-  const annotatedElement = startElement?.closest<HTMLElement>("[data-node-id]");
-  if (!annotatedElement) {
+  const blockContentElement = startElement?.closest<HTMLElement>("[data-block-content]");
+  const annotatedElement = blockContentElement?.closest<HTMLElement>("[data-block-id]");
+  if (!blockContentElement || !annotatedElement) {
     return null;
   }
 
   const prefixRange = range.cloneRange();
-  prefixRange.selectNodeContents(annotatedElement);
+  prefixRange.selectNodeContents(blockContentElement);
   prefixRange.setEnd(range.startContainer, range.startOffset);
   const startOffset = prefixRange.toString().length;
 
   return {
-    nodeId: annotatedElement.dataset.nodeId ?? "unknown-node",
+    blockId: annotatedElement.dataset.blockId ?? "unknown-block",
     startOffset,
     endOffset: startOffset + selectedText.length,
     selectedText,
+    startLine: Number(annotatedElement.dataset.startLine) || undefined,
+    endLine: Number(annotatedElement.dataset.endLine) || undefined,
   };
 }
 
@@ -105,12 +109,13 @@ export function AnnotatorPage() {
   const [status, setStatus] = useState("예제 문서를 선택하거나 로컬 Markdown 파일을 열 수 있습니다.");
 
   const title = document.fileName;
+  const blocks = useMemo(() => parseMarkdownToBlocks(document.markdownText), [document.markdownText]);
   const exportText = useMemo(
-    () => formatAnnotationsForAgent(document.fileName, annotations),
-    [annotations, document.fileName],
+    () => formatAnnotationsForAgent(document.fileName, annotations, blocks),
+    [annotations, blocks, document.fileName],
   );
-  const annotatedNodeIds = useMemo(
-    () => new Set(annotations.map((annotation) => annotation.anchor.nodeId)),
+  const annotatedBlockIds = useMemo(
+    () => new Set(annotations.map((annotation) => annotation.anchor.blockId)),
     [annotations],
   );
 
@@ -160,7 +165,7 @@ export function AnnotatorPage() {
     if (anchor?.selectedText) {
       setSelection(anchor.selectedText);
       setSelectionAnchor(anchor);
-      setStatus(`선택 anchor를 저장했습니다: ${anchor.nodeId}`);
+      setStatus("선택 anchor를 저장했습니다.");
     }
   }
 
@@ -251,7 +256,7 @@ export function AnnotatorPage() {
                   </CardAction>
                 </CardHeader>
                 <CardContent>
-                  <MarkdownViewer markdown={document.markdownText} annotatedNodeIds={annotatedNodeIds} />
+                  <MarkdownViewer blocks={blocks} annotatedBlockIds={annotatedBlockIds} />
                 </CardContent>
               </Card>
             </div>
@@ -284,8 +289,8 @@ export function AnnotatorPage() {
                           </div>
                           <FieldDescription>
                             {selectionAnchor
-                              ? `Anchor: ${selectionAnchor.nodeId}`
-                              : "선택하면 stable node id와 offset을 저장합니다."}
+                              ? "선택 범위가 저장되었습니다."
+                              : "선택하면 block anchor와 offset을 내부적으로 저장합니다."}
                           </FieldDescription>
                         </Field>
                         <Field>
@@ -355,7 +360,7 @@ export function AnnotatorPage() {
                       <Card key={annotation.id} size="sm">
                         <CardHeader>
                           <CardTitle className="line-clamp-2 text-sm">{annotation.selectedText}</CardTitle>
-                          <CardDescription>{annotation.anchor.nodeId}</CardDescription>
+                          <CardDescription>{annotation.type}</CardDescription>
                           <CardAction>
                             <Button
                               type="button"

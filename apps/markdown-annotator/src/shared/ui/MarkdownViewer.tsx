@@ -1,109 +1,143 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { Components } from "react-markdown";
+import type { ElementType } from "react";
+import type { MarkdownBlock } from "@/entities/markdown-block/model/types";
 import { cn } from "@/lib/utils";
 
 type MarkdownViewerProps = {
-  markdown: string;
-  annotatedNodeIds?: Set<string>;
+  blocks: MarkdownBlock[];
+  annotatedBlockIds?: Set<string>;
 };
 
-const textFromChildren = (children: unknown): string => {
-  if (typeof children === "string") {
-    return children;
-  }
-
-  if (Array.isArray(children)) {
-    return children.map(textFromChildren).join("");
-  }
-
-  if (children && typeof children === "object" && "props" in children) {
-    return textFromChildren((children as { props?: { children?: unknown } }).props?.children);
-  }
-
-  return "";
-};
-
-const slugify = (value: string) =>
-  value
-    .toLowerCase()
-    .replace(/[^a-z0-9가-힣]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 48);
-
-const nodeIdFor = (kind: string, index: number, children: unknown) => {
-  const slug = slugify(textFromChildren(children));
-  return slug ? `${kind}-${index}-${slug}` : `${kind}-${index}`;
-};
-
-export function MarkdownViewer({ markdown, annotatedNodeIds = new Set() }: MarkdownViewerProps) {
-  const counters = new Map<string, number>();
-
-  const nextIndex = (kind: string) => {
-    const index = counters.get(kind) ?? 0;
-    counters.set(kind, index + 1);
-    return index;
-  };
-
-  const nodeProps = (kind: string, children: unknown) => {
-    const nodeId = nodeIdFor(kind, nextIndex(kind), children);
-    return {
-      "data-node-id": nodeId,
-      className: cn(
-        "rounded-[6px] transition-shadow",
-        annotatedNodeIds.has(nodeId) && "ring-2 ring-primary/35 ring-offset-2 ring-offset-background",
-      ),
-    };
-  };
-
-  const components: Components = {
-    h1: ({ children, ...props }) => (
-      <h1 {...props} {...nodeProps("h1", children)}>
-        {children}
-      </h1>
-    ),
-    h2: ({ children, ...props }) => (
-      <h2 {...props} {...nodeProps("h2", children)}>
-        {children}
-      </h2>
-    ),
-    h3: ({ children, ...props }) => (
-      <h3 {...props} {...nodeProps("h3", children)}>
-        {children}
-      </h3>
-    ),
-    p: ({ children, ...props }) => (
-      <p {...props} {...nodeProps("p", children)}>
-        {children}
-      </p>
-    ),
-    li: ({ children, ...props }) => (
-      <li {...props} {...nodeProps("li", children)}>
-        {children}
-      </li>
-    ),
-    blockquote: ({ children, ...props }) => (
-      <blockquote {...props} {...nodeProps("quote", children)}>
-        {children}
-      </blockquote>
-    ),
-    pre: ({ children, ...props }) => (
-      <pre {...props} {...nodeProps("code", children)}>
-        {children}
-      </pre>
-    ),
-    table: ({ children, ...props }) => (
-      <table {...props} {...nodeProps("table", children)}>
-        {children}
-      </table>
-    ),
-  };
-
+function InlineMarkdown({ children }: { children: string }) {
   return (
-    <article className="markdown-viewer max-w-none">
-      <ReactMarkdown components={components} remarkPlugins={[remarkGfm]}>
-        {markdown}
-      </ReactMarkdown>
+    <ReactMarkdown
+      components={{
+        p: ({ children: inlineChildren }) => <>{inlineChildren}</>,
+      }}
+      remarkPlugins={[remarkGfm]}
+    >
+      {children}
+    </ReactMarkdown>
+  );
+}
+
+function BlockShell({
+  block,
+  annotated,
+  children,
+}: {
+  block: MarkdownBlock;
+  annotated: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        "group/markdown-block relative rounded-lg border border-transparent p-2 transition-colors",
+        "hover:border-border hover:bg-muted/30",
+        annotated && "border-primary/40 bg-primary/5 ring-2 ring-primary/20",
+      )}
+      data-block-id={block.id}
+      data-block-type={block.type}
+      data-start-line={block.startLine}
+      data-end-line={block.endLine}
+    >
+      <div data-block-content>{children}</div>
+    </div>
+  );
+}
+
+function MarkdownBlockRenderer({
+  block,
+  annotated,
+}: {
+  block: MarkdownBlock;
+  annotated: boolean;
+}) {
+  switch (block.type) {
+    case "heading": {
+      const Tag = `h${block.level ?? 1}` as ElementType;
+      return (
+        <BlockShell block={block} annotated={annotated}>
+          <Tag>
+            <InlineMarkdown>{block.content}</InlineMarkdown>
+          </Tag>
+        </BlockShell>
+      );
+    }
+
+    case "blockquote":
+      return (
+        <BlockShell block={block} annotated={annotated}>
+          <blockquote>
+            <InlineMarkdown>{block.content}</InlineMarkdown>
+          </blockquote>
+        </BlockShell>
+      );
+
+    case "list-item":
+      return (
+        <BlockShell block={block} annotated={annotated}>
+          <div
+            className="flex items-start gap-3"
+            style={{ marginLeft: `${(block.level ?? 0) * 1.25}rem` }}
+          >
+            <span className="mt-0.5 text-muted-foreground">
+              {block.ordered ? `${block.orderedStart ?? 1}.` : "-"}
+            </span>
+            <div className={cn(block.checked && "text-muted-foreground line-through")}>
+              <InlineMarkdown>{block.content}</InlineMarkdown>
+            </div>
+          </div>
+        </BlockShell>
+      );
+
+    case "code":
+      return (
+        <BlockShell block={block} annotated={annotated}>
+          <pre>
+            <code>{block.content}</code>
+          </pre>
+        </BlockShell>
+      );
+
+    case "table":
+      return (
+        <BlockShell block={block} annotated={annotated}>
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{block.content}</ReactMarkdown>
+        </BlockShell>
+      );
+
+    case "hr":
+      return (
+        <BlockShell block={block} annotated={annotated}>
+          <hr />
+        </BlockShell>
+      );
+
+    case "paragraph":
+    default:
+      return (
+        <BlockShell block={block} annotated={annotated}>
+          <p>
+            <InlineMarkdown>{block.content}</InlineMarkdown>
+          </p>
+        </BlockShell>
+      );
+  }
+}
+
+export function MarkdownViewer({ blocks, annotatedBlockIds = new Set() }: MarkdownViewerProps) {
+  return (
+    <article className="markdown-viewer flex max-w-none flex-col gap-2">
+      {blocks.map((block) => (
+        <MarkdownBlockRenderer
+          annotated={annotatedBlockIds.has(block.id)}
+          block={block}
+          key={block.id}
+        />
+      ))}
     </article>
   );
 }

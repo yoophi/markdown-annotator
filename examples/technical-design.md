@@ -8,21 +8,23 @@ Annotations should attach to the document model, not to incidental DOM structure
 
 ```ts
 type AnnotationAnchor = {
-  nodeId: string
+  blockId: string
   startOffset?: number
   endOffset?: number
   selectedText?: string
+  startLine?: number
+  endLine?: number
 }
 ```
 
-The `nodeId` identifies a rendered block or inline unit. Offsets describe the selected text inside that unit.
+The `blockId` identifies a rendered Markdown block. Offsets describe the selected text inside that block.
 
 ## Rendering
 
 Each meaningful Markdown element should receive a stable id.
 
 ```html
-<p data-node-id="p-12">
+<p data-block-id="block-12" data-start-line="18" data-end-line="18">
   Use filesystem JSON cache for the MVP.
 </p>
 ```

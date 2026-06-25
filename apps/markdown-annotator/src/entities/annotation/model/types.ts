@@ -1,10 +1,12 @@
 export type AnnotationType = "question" | "change-request" | "note" | "approve";
 
 export type AnnotationAnchor = {
-  nodeId: string;
+  blockId: string;
   startOffset?: number;
   endOffset?: number;
   selectedText?: string;
+  startLine?: number;
+  endLine?: number;
 };
 
 export type AnnotationDraft = {
