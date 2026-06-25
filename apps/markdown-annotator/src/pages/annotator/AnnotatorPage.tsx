@@ -19,6 +19,15 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Empty,
   EmptyDescription,
   EmptyHeader,
@@ -31,6 +40,7 @@ import {
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
@@ -131,6 +141,7 @@ export function AnnotatorPage() {
   const [comment, setComment] = useState("");
   const [annotations, setAnnotations] = useState<AnnotationDraft[]>([]);
   const [editingAnnotationId, setEditingAnnotationId] = useState<string | null>(null);
+  const [noteDialogOpen, setNoteDialogOpen] = useState(false);
   const [selectionHighlightRects, setSelectionHighlightRects] = useState<SelectionHighlightRect[]>([]);
   const [selectionToolbarPosition, setSelectionToolbarPosition] = useState<SelectionToolbarPosition | null>(null);
   const [status, setStatus] = useState("예제 문서를 선택하거나 로컬 Markdown 파일을 열 수 있습니다.");
@@ -230,6 +241,7 @@ export function AnnotatorPage() {
     setSelectionHighlightRects([]);
     setSelectionToolbarPosition(null);
     setEditingAnnotationId(null);
+    setNoteDialogOpen(false);
     setComment("");
     setStatus(`${example.fileName} 예제를 불러왔습니다.`);
   }
@@ -248,6 +260,7 @@ export function AnnotatorPage() {
       setSelectionHighlightRects([]);
       setSelectionToolbarPosition(null);
       setEditingAnnotationId(null);
+      setNoteDialogOpen(false);
       setComment("");
       setStatus(`${opened.fileName} 파일을 열었습니다.`);
     } catch (error) {
@@ -275,6 +288,7 @@ export function AnnotatorPage() {
     setEditingAnnotationId(null);
     setAnnotationType("note");
     setComment("");
+    setNoteDialogOpen(true);
     setStatus("블록 코멘트 입력을 시작했습니다.");
   }
 
@@ -351,6 +365,7 @@ export function AnnotatorPage() {
     setComment("");
     setEditingAnnotationId(null);
     setSelectionToolbarPosition(null);
+    setNoteDialogOpen(true);
     setStatus("선택 영역 노트 입력을 시작했습니다.");
   }
 
@@ -377,6 +392,7 @@ export function AnnotatorPage() {
     setSelectionHighlightRects([]);
     setSelectionToolbarPosition(null);
     setEditingAnnotationId(null);
+    setNoteDialogOpen(false);
     window.getSelection()?.removeAllRanges();
     setStatus("선택 영역 삭제 annotation을 추가했습니다.");
   }
@@ -394,7 +410,66 @@ export function AnnotatorPage() {
     setEditingAnnotationId(annotation.id);
     setSelectionHighlightRects([]);
     setSelectionToolbarPosition(null);
+    setNoteDialogOpen(true);
     setStatus("노트 annotation 수정 모드입니다.");
+  }
+
+  function closeNoteDialog() {
+    setNoteDialogOpen(false);
+    setEditingAnnotationId(null);
+    setComment("");
+    setSelection("");
+    setSelectionAnchor(null);
+    setSelectionHighlightRects([]);
+    setSelectionToolbarPosition(null);
+    window.getSelection()?.removeAllRanges();
+  }
+
+  function saveDialogAnnotation() {
+    if (!selection || !selectionAnchor || !comment.trim()) {
+      setStatus("Annotation 내용을 입력하세요.");
+      return;
+    }
+
+    if (editingAnnotationId) {
+      setAnnotations((current) =>
+        current.map((annotation) =>
+          annotation.id === editingAnnotationId
+            ? {
+                ...annotation,
+                anchor: selectionAnchor,
+                selectedText: selection,
+                comment: comment.trim(),
+                type: annotationType,
+              }
+            : annotation,
+        ),
+      );
+      setStatus("Annotation을 수정했습니다.");
+    } else {
+      setAnnotations((current) => [
+        ...current,
+        {
+          id: crypto.randomUUID(),
+          fileName: document.fileName,
+          anchor: selectionAnchor,
+          selectedText: selection,
+          comment: comment.trim(),
+          type: annotationType,
+          createdAt: new Date().toISOString(),
+        },
+      ]);
+      setStatus("Annotation을 추가했습니다.");
+    }
+
+    setComment("");
+    setSelection("");
+    setSelectionAnchor(null);
+    setSelectionHighlightRects([]);
+    setSelectionToolbarPosition(null);
+    setEditingAnnotationId(null);
+    setNoteDialogOpen(false);
+    window.getSelection()?.removeAllRanges();
   }
 
   function addAnnotation() {
@@ -423,6 +498,7 @@ export function AnnotatorPage() {
       setSelectionHighlightRects([]);
       setSelectionToolbarPosition(null);
       setEditingAnnotationId(null);
+      setNoteDialogOpen(false);
       window.getSelection()?.removeAllRanges();
       setStatus("Annotation을 수정했습니다.");
       return;
@@ -446,6 +522,7 @@ export function AnnotatorPage() {
     setSelectionHighlightRects([]);
     setSelectionToolbarPosition(null);
     setEditingAnnotationId(null);
+    setNoteDialogOpen(false);
     window.getSelection()?.removeAllRanges();
     setStatus("Annotation을 추가했습니다.");
   }
@@ -723,6 +800,80 @@ export function AnnotatorPage() {
           </Tabs>
         </aside>
       </section>
+
+      <Dialog
+        open={noteDialogOpen}
+        onOpenChange={(open) => {
+          if (open) {
+            setNoteDialogOpen(true);
+            return;
+          }
+
+          closeNoteDialog();
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingAnnotationId ? "Edit annotation" : "Add annotation"}</DialogTitle>
+            <DialogDescription>선택한 문서 영역에 남길 annotation type과 내용을 입력합니다.</DialogDescription>
+          </DialogHeader>
+          <FieldGroup>
+            <Field>
+              <FieldLabel>Selected text</FieldLabel>
+              <div className="max-h-24 overflow-auto rounded-lg border bg-muted/50 p-3 text-sm text-muted-foreground">
+                {selection}
+              </div>
+            </Field>
+            <Field>
+              <FieldLabel>Type</FieldLabel>
+              <Select
+                value={annotationType}
+                onValueChange={(value) => {
+                  if (value) {
+                    setAnnotationType(value as AnnotationType);
+                  }
+                }}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectLabel>Annotation type</SelectLabel>
+                    {annotationTypes.map((type) => (
+                      <SelectItem key={type.value} value={type.value}>
+                        {type.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="annotation-dialog-comment">Comment</FieldLabel>
+              <Input
+                autoFocus
+                id="annotation-dialog-comment"
+                value={comment}
+                onChange={(event) => setComment(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    saveDialogAnnotation();
+                  }
+                }}
+                placeholder="Annotation 내용을 입력하세요."
+              />
+            </Field>
+          </FieldGroup>
+          <DialogFooter>
+            <DialogClose render={<Button type="button" variant="outline" />}>Cancel</DialogClose>
+            <Button type="button" onClick={saveDialogAnnotation}>
+              {editingAnnotationId ? "Save" : "Add annotation"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <footer className="border-t bg-card px-4 py-2 text-xs text-muted-foreground">{status}</footer>
     </main>
