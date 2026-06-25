@@ -58,7 +58,10 @@ import type { AnnotationAnchor, AnnotationDraft, AnnotationType } from "@/entiti
 import { exampleMarkdownDocuments } from "@/entities/document/model/examples";
 import type { MarkdownDocument } from "@/entities/document/model/types";
 import type { MarkdownBlock } from "@/entities/markdown-block/model/types";
-import { formatAnnotationsForAgent } from "@/features/export-annotations/formatAnnotationsForAgent";
+import {
+  formatAnnotationsForAgent,
+  type AgentPromptGoal,
+} from "@/features/export-annotations/formatAnnotationsForAgent";
 import { parseMarkdownToBlocks } from "@/features/markdown-renderer/parseMarkdownToBlocks";
 import { openMarkdownDocument } from "@/features/open-document/openMarkdownDocument";
 import {
@@ -74,6 +77,68 @@ const annotationTypes: Array<{ value: AnnotationType; label: string }> = [
   { value: "note", label: "Note" },
   { value: "approve", label: "Approve" },
 ];
+
+const promptGoals: Array<{ value: AgentPromptGoal; label: string; description: string }> = [
+  {
+    value: "edit-document",
+    label: "문서 수정",
+    description: "Agent가 annotation을 실제 문서 변경 요청으로 해석합니다.",
+  },
+  {
+    value: "review-reference",
+    label: "검토 참고",
+    description: "Agent가 annotation을 수정 지시가 아닌 리뷰 메모로 참고합니다.",
+  },
+  {
+    value: "custom",
+    label: "기타",
+    description: "아래 사용자 지침을 우선 따릅니다.",
+  },
+];
+
+function annotationCommentLabel(type: AnnotationType) {
+  if (type === "change-request") {
+    return "Replace with";
+  }
+
+  if (type === "note") {
+    return "Reference note";
+  }
+
+  if (type === "question") {
+    return "Question";
+  }
+
+  if (type === "delete") {
+    return "Delete reason";
+  }
+
+  return "Comment";
+}
+
+function annotationCommentPlaceholder(type: AnnotationType) {
+  if (type === "change-request") {
+    return "선택 영역을 어떻게 바꿔야 하는지 적어주세요. 예: 시장에서 구입";
+  }
+
+  if (type === "note") {
+    return "수정 지시가 아닌 참고 메모를 적어주세요.";
+  }
+
+  if (type === "question") {
+    return "Agent가 확인해야 할 질문을 적어주세요.";
+  }
+
+  if (type === "delete") {
+    return "삭제 이유가 있으면 적어주세요. 비워두면 삭제 지시만 출력합니다.";
+  }
+
+  return "Agent가 참고해야 할 내용을 적어주세요.";
+}
+
+function requiresComment(type: AnnotationType) {
+  return type !== "delete";
+}
 
 type SelectionToolbarPosition = {
   left: number;
@@ -165,6 +230,12 @@ export function AnnotatorPage() {
   const [selectionAnchors, setSelectionAnchors] = useState<AnnotationAnchor[]>([]);
   const [annotationType, setAnnotationType] = useState<AnnotationType>("change-request");
   const [comment, setComment] = useState("");
+  const [promptGoal, setPromptGoal] = useState<AgentPromptGoal>("edit-document");
+  const [promptInstruction, setPromptInstruction] = useState("수정 요청은 문서에 반영하고, note는 참고 정보로만 사용하세요.");
+  const [promptFilePath, setPromptFilePath] = useState(() => {
+    const initial = exampleMarkdownDocuments[0];
+    return initial ? `examples/${initial.fileName}` : "";
+  });
   const [annotations, setAnnotations] = useState<AnnotationDraft[]>([]);
   const [editingAnnotationId, setEditingAnnotationId] = useState<string | null>(null);
   const [noteDialogOpen, setNoteDialogOpen] = useState(false);
@@ -175,8 +246,13 @@ export function AnnotatorPage() {
   const title = document.fileName;
   const blocks = useMemo(() => parseMarkdownToBlocks(document.markdownText), [document.markdownText]);
   const exportText = useMemo(
-    () => formatAnnotationsForAgent(document.fileName, annotations, blocks),
-    [annotations, blocks, document.fileName],
+    () =>
+      formatAnnotationsForAgent(document.fileName, annotations, blocks, {
+        filePath: promptFilePath || document.absolutePath,
+        goal: promptGoal,
+        instruction: promptInstruction,
+      }),
+    [annotations, blocks, document.absolutePath, document.fileName, promptFilePath, promptGoal, promptInstruction],
   );
   const annotatedBlockIds = useMemo(
     () => new Set(annotations.map((annotation) => annotation.anchor.blockId)),
@@ -308,6 +384,7 @@ export function AnnotatorPage() {
       absolutePath: `examples/${example.fileName}`,
       markdownText: example.markdownText,
     });
+    setPromptFilePath(`examples/${example.fileName}`);
     setAnnotations([]);
     resetSelectionState();
     setEditingAnnotationId(null);
@@ -324,6 +401,7 @@ export function AnnotatorPage() {
       }
 
       setDocument(opened);
+      setPromptFilePath(opened.absolutePath);
       setAnnotations([]);
       resetSelectionState();
       setEditingAnnotationId(null);
@@ -518,7 +596,7 @@ export function AnnotatorPage() {
   }
 
   function saveDialogAnnotation() {
-    if (!selection || activeSelectionAnchors().length === 0 || !comment.trim()) {
+    if (!selection || activeSelectionAnchors().length === 0 || (requiresComment(annotationType) && !comment.trim())) {
       setStatus("Annotation 내용을 입력하세요.");
       return;
     }
@@ -556,7 +634,7 @@ export function AnnotatorPage() {
   }
 
   function addAnnotation() {
-    if (!selection || activeSelectionAnchors().length === 0 || !comment.trim()) {
+    if (!selection || activeSelectionAnchors().length === 0 || (requiresComment(annotationType) && !comment.trim())) {
       setStatus("텍스트를 선택하고 comment를 입력하세요.");
       return;
     }
@@ -791,12 +869,12 @@ export function AnnotatorPage() {
                           </Select>
                         </Field>
                         <Field>
-                          <FieldLabel htmlFor="annotation-comment">Comment</FieldLabel>
+                          <FieldLabel htmlFor="annotation-comment">{annotationCommentLabel(annotationType)}</FieldLabel>
                           <Textarea
                             id="annotation-comment"
                             value={comment}
                             onChange={(event) => setComment(event.target.value)}
-                            placeholder="Agent가 반영해야 할 피드백을 적어주세요."
+                            placeholder={annotationCommentPlaceholder(annotationType)}
                             rows={5}
                           />
                         </Field>
@@ -868,10 +946,72 @@ export function AnnotatorPage() {
 
             <TabsContent value="prompt" className="min-h-0 flex-1">
               <div className="flex h-[calc(100vh-8rem)] flex-col gap-3 p-4">
+                <Card size="sm">
+                  <CardHeader>
+                    <CardTitle className="text-sm">Prompt instruction</CardTitle>
+                    <CardDescription>Agent가 annotation을 어떻게 처리할지 지정합니다.</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <FieldGroup>
+                      <Field>
+                        <FieldLabel htmlFor="prompt-file-path">File path</FieldLabel>
+                        <Input
+                          id="prompt-file-path"
+                          value={promptFilePath}
+                          onChange={(event) => setPromptFilePath(event.target.value)}
+                          placeholder="/absolute/path/to/document.md"
+                        />
+                        <FieldDescription>
+                          Agent가 파일을 직접 수정해야 한다면 절대경로를 입력하는 것이 안전합니다.
+                        </FieldDescription>
+                      </Field>
+                      <Field>
+                        <FieldLabel>Goal</FieldLabel>
+                        <Select
+                          value={promptGoal}
+                          onValueChange={(value) => {
+                            if (value) {
+                              setPromptGoal(value as AgentPromptGoal);
+                            }
+                          }}
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectGroup>
+                              <SelectLabel>Agent goal</SelectLabel>
+                              {promptGoals.map((goal) => (
+                                <SelectItem key={goal.value} value={goal.value}>
+                                  {goal.label}
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
+                          </SelectContent>
+                        </Select>
+                        <FieldDescription>
+                          {promptGoals.find((goal) => goal.value === promptGoal)?.description}
+                        </FieldDescription>
+                      </Field>
+                      <Field>
+                        <FieldLabel htmlFor="prompt-instruction">User instruction</FieldLabel>
+                        <Textarea
+                          id="prompt-instruction"
+                          value={promptInstruction}
+                          onChange={(event) => setPromptInstruction(event.target.value)}
+                          placeholder="예: change-request는 문서에 반영하고 note는 참고만 하세요."
+                          rows={3}
+                        />
+                      </Field>
+                    </FieldGroup>
+                  </CardContent>
+                </Card>
                 <div className="flex items-center justify-between">
                   <div>
                     <h2 className="text-sm font-medium">Agent prompt</h2>
-                    <p className="text-sm text-muted-foreground">복사해서 agent session에 전달할 Markdown입니다.</p>
+                    <p className="text-sm text-muted-foreground">
+                      파일 경로와 사용자 지침을 포함해 agent session에 전달할 Markdown입니다.
+                    </p>
                   </div>
                   <Button type="button" size="sm" onClick={copyExport}>
                     <ClipboardCopy data-icon="inline-start" aria-hidden="true" />
@@ -934,7 +1074,7 @@ export function AnnotatorPage() {
               </Select>
             </Field>
             <Field>
-              <FieldLabel htmlFor="annotation-dialog-comment">Comment</FieldLabel>
+              <FieldLabel htmlFor="annotation-dialog-comment">{annotationCommentLabel(annotationType)}</FieldLabel>
               <Input
                 autoFocus
                 id="annotation-dialog-comment"
@@ -946,7 +1086,7 @@ export function AnnotatorPage() {
                     saveDialogAnnotation();
                   }
                 }}
-                placeholder="Annotation 내용을 입력하세요."
+                placeholder={annotationCommentPlaceholder(annotationType)}
               />
             </Field>
           </FieldGroup>

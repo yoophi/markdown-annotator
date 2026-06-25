@@ -57,6 +57,7 @@ export function parseMarkdownToBlocks(markdown: string): MarkdownBlock[] {
     pushBlock({
       type: "paragraph",
       content: paragraphBuffer.join("\n"),
+      rawContent: paragraphBuffer.join("\n"),
       startLine: paragraphStartLine,
       endLine: endLine ?? paragraphStartLine + paragraphBuffer.length - 1,
     });
@@ -80,6 +81,7 @@ export function parseMarkdownToBlocks(markdown: string): MarkdownBlock[] {
         type: "heading",
         level: headingMatch[1].length,
         content: headingMatch[2],
+        rawContent: line,
         startLine: lineNumber,
         endLine: lineNumber,
       });
@@ -91,11 +93,13 @@ export function parseMarkdownToBlocks(markdown: string): MarkdownBlock[] {
       const fence = trimmed.slice(0, 3);
       const language = trimmed.slice(3).trim() || undefined;
       const codeLines: string[] = [];
+      const rawCodeLines: string[] = [line];
       let endLine = lineNumber;
 
       for (index += 1; index < lines.length; index += 1) {
         const codeLine = lines[index];
         endLine = contentStartLine + index;
+        rawCodeLines.push(codeLine);
         if (codeLine.trim().startsWith(fence)) {
           break;
         }
@@ -105,6 +109,7 @@ export function parseMarkdownToBlocks(markdown: string): MarkdownBlock[] {
       pushBlock({
         type: "code",
         content: codeLines.join("\n"),
+        rawContent: rawCodeLines.join("\n"),
         language,
         startLine: lineNumber,
         endLine,
@@ -128,6 +133,7 @@ export function parseMarkdownToBlocks(markdown: string): MarkdownBlock[] {
       pushBlock({
         type: "table",
         content: tableLines.join("\n"),
+        rawContent: tableLines.join("\n"),
         startLine,
         endLine,
       });
@@ -139,6 +145,7 @@ export function parseMarkdownToBlocks(markdown: string): MarkdownBlock[] {
       pushBlock({
         type: "hr",
         content: "",
+        rawContent: line,
         startLine: lineNumber,
         endLine: lineNumber,
       });
@@ -163,6 +170,7 @@ export function parseMarkdownToBlocks(markdown: string): MarkdownBlock[] {
       pushBlock({
         type: "list-item",
         content: itemContent,
+        rawContent: line,
         level,
         ordered,
         orderedStart: ordered ? Number.parseInt(listMatch[2], 10) : undefined,
@@ -176,11 +184,13 @@ export function parseMarkdownToBlocks(markdown: string): MarkdownBlock[] {
     if (trimmed.startsWith(">")) {
       flushParagraph(lineNumber - 1);
       const quoteLines: string[] = [];
+      const rawQuoteLines: string[] = [];
       const startLine = lineNumber;
       let endLine = lineNumber;
 
       while (index < lines.length && lines[index].trim().startsWith(">")) {
         quoteLines.push(lines[index].trim().replace(/^>\s?/, ""));
+        rawQuoteLines.push(lines[index]);
         endLine = contentStartLine + index;
         index += 1;
       }
@@ -189,6 +199,7 @@ export function parseMarkdownToBlocks(markdown: string): MarkdownBlock[] {
       pushBlock({
         type: "blockquote",
         content: quoteLines.join("\n"),
+        rawContent: rawQuoteLines.join("\n"),
         startLine,
         endLine,
       });

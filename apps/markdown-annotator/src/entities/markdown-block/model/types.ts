@@ -11,6 +11,7 @@ export type MarkdownBlock = {
   id: string;
   type: MarkdownBlockType;
   content: string;
+  rawContent: string;
   order: number;
   startLine: number;
   endLine: number;
