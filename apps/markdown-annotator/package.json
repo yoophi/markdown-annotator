@@ -1,0 +1,41 @@
+{
+  "name": "@yoophi/markdown-annotator",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "check-types": "tsc --noEmit",
+    "preview": "vite preview",
+    "storybook": "storybook dev -p 6006",
+    "build-storybook": "storybook build",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev"
+  },
+  "dependencies": {
+    "@fontsource-variable/geist": "^5.2.9",
+    "@tailwindcss/vite": "^4.3.1",
+    "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/plugin-dialog": "^2.7.1",
+    "@vitejs/plugin-react": "^5.0.0",
+    "lucide-react": "^1.21.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "tailwindcss": "^4.3.1",
+    "vite": "^7.0.0",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "@storybook/addon-docs": "^10.4.6",
+    "@storybook/react-vite": "^10.4.6",
+    "@tauri-apps/cli": "^2.10.1",
+    "@types/node": "^26.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "storybook": "^10.4.6",
+    "typescript": "^5.6.0"
+  }
+}

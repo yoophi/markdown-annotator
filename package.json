@@ -1,0 +1,20 @@
+{
+  "name": "markdown-annotator",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "pnpm@9.10.0",
+  "scripts": {
+    "dev": "turbo run dev --filter=@yoophi/markdown-annotator",
+    "build": "turbo run build",
+    "check-types": "turbo run check-types",
+    "preview": "turbo run preview --filter=@yoophi/markdown-annotator",
+    "storybook": "turbo run storybook --filter=@yoophi/markdown-annotator",
+    "build-storybook": "turbo run build-storybook --filter=@yoophi/markdown-annotator",
+    "tauri": "turbo run tauri --filter=@yoophi/markdown-annotator --",
+    "tauri:dev": "turbo run tauri:dev --filter=@yoophi/markdown-annotator --"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.8"
+  }
+}

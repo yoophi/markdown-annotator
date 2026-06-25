@@ -1,1 +1,17 @@
+node_modules
+dist
+dist-ssr
+storybook-static
+.turbo
+.DS_Store
 ref/
+
+# Tauri / Rust
+target
+**/src-tauri/target
+**/src-tauri/gen
+
+# Local env
+.env
+.env.local
+.env.*.local
