@@ -7,7 +7,7 @@ import {
   StickyNote,
   Trash2,
 } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -87,41 +87,66 @@ type SelectionHighlightRect = {
   width: number;
 };
 
+function isUsefulSelectionRect(rect: DOMRect) {
+  return rect.width > 0 && rect.height > 0;
+}
+
 function isFullBlockAnnotation(annotation: AnnotationDraft, block: MarkdownBlock) {
   return annotation.anchor.startOffset === 0 && annotation.anchor.endOffset === block.content.length;
 }
 
-function getSelectionAnchor(): AnnotationAnchor | null {
+function containsNode(parent: HTMLElement, node: Node) {
+  return parent === node || parent.contains(node);
+}
+
+function getSelectionAnchors(root: HTMLElement | null): AnnotationAnchor[] {
   const selection = window.getSelection();
   const selectedText = selection?.toString().trim();
-  if (!selection || !selectedText || selection.rangeCount === 0) {
-    return null;
+  if (!root || !selection || !selectedText || selection.rangeCount === 0) {
+    return [];
   }
 
   const range = selection.getRangeAt(0);
-  const startElement =
-    range.startContainer.nodeType === Node.TEXT_NODE
-      ? range.startContainer.parentElement
-      : (range.startContainer as Element);
-  const blockContentElement = startElement?.closest<HTMLElement>("[data-block-content]");
-  const annotatedElement = blockContentElement?.closest<HTMLElement>("[data-block-id]");
-  if (!blockContentElement || !annotatedElement) {
-    return null;
-  }
+  const blockContentElements = Array.from(root.querySelectorAll<HTMLElement>("[data-block-content]"));
 
-  const prefixRange = range.cloneRange();
-  prefixRange.selectNodeContents(blockContentElement);
-  prefixRange.setEnd(range.startContainer, range.startOffset);
-  const startOffset = prefixRange.toString().length;
+  return blockContentElements.flatMap((blockContentElement) => {
+    const annotatedElement = blockContentElement.closest<HTMLElement>("[data-block-id]");
+    if (!annotatedElement || !range.intersectsNode(blockContentElement)) {
+      return [];
+    }
 
-  return {
-    blockId: annotatedElement.dataset.blockId ?? "unknown-block",
-    startOffset,
-    endOffset: startOffset + selectedText.length,
-    selectedText,
-    startLine: Number(annotatedElement.dataset.startLine) || undefined,
-    endLine: Number(annotatedElement.dataset.endLine) || undefined,
-  };
+    const segmentRange = range.cloneRange();
+    segmentRange.selectNodeContents(blockContentElement);
+
+    if (containsNode(blockContentElement, range.startContainer)) {
+      segmentRange.setStart(range.startContainer, range.startOffset);
+    }
+
+    if (containsNode(blockContentElement, range.endContainer)) {
+      segmentRange.setEnd(range.endContainer, range.endOffset);
+    }
+
+    const segmentText = segmentRange.toString();
+    if (!segmentText.trim()) {
+      return [];
+    }
+
+    const prefixRange = document.createRange();
+    prefixRange.selectNodeContents(blockContentElement);
+    prefixRange.setEnd(segmentRange.startContainer, segmentRange.startOffset);
+    const startOffset = prefixRange.toString().length;
+
+    return [
+      {
+        blockId: annotatedElement.dataset.blockId ?? "unknown-block",
+        startOffset,
+        endOffset: startOffset + segmentText.length,
+        selectedText: segmentText,
+        startLine: Number(annotatedElement.dataset.startLine) || undefined,
+        endLine: Number(annotatedElement.dataset.endLine) || undefined,
+      },
+    ];
+  });
 }
 
 export function AnnotatorPage() {
@@ -137,6 +162,7 @@ export function AnnotatorPage() {
   });
   const [selection, setSelection] = useState("");
   const [selectionAnchor, setSelectionAnchor] = useState<AnnotationAnchor | null>(null);
+  const [selectionAnchors, setSelectionAnchors] = useState<AnnotationAnchor[]>([]);
   const [annotationType, setAnnotationType] = useState<AnnotationType>("change-request");
   const [comment, setComment] = useState("");
   const [annotations, setAnnotations] = useState<AnnotationDraft[]>([]);
@@ -218,6 +244,53 @@ export function AnnotatorPage() {
 
     return inlineAnnotations;
   }, [annotations, blocks]);
+  const visibleAnnotations = useMemo(() => {
+    const seen = new Set<string>();
+
+    return annotations.filter((annotation) => {
+      const key = annotation.groupId ?? annotation.id;
+      if (seen.has(key)) {
+        return false;
+      }
+
+      seen.add(key);
+      return true;
+    });
+  }, [annotations]);
+
+  function resetSelectionState() {
+    setSelection("");
+    setSelectionAnchor(null);
+    setSelectionAnchors([]);
+    setSelectionHighlightRects([]);
+    setSelectionToolbarPosition(null);
+    window.getSelection()?.removeAllRanges();
+  }
+
+  function activeSelectionAnchors() {
+    if (selectionAnchors.length > 0) {
+      return selectionAnchors;
+    }
+
+    return selectionAnchor ? [selectionAnchor] : [];
+  }
+
+  function makeAnnotationsFromSelection(type: AnnotationType, annotationComment: string) {
+    const anchors = activeSelectionAnchors();
+    const groupId = anchors.length > 1 ? crypto.randomUUID() : undefined;
+    const createdAt = new Date().toISOString();
+
+    return anchors.map((anchor) => ({
+      id: crypto.randomUUID(),
+      groupId,
+      fileName: document.fileName,
+      anchor,
+      selectedText: anchor.selectedText ?? selection,
+      comment: annotationComment,
+      type,
+      createdAt,
+    }));
+  }
 
   function loadExample(exampleId: string | null) {
     if (!exampleId) {
@@ -236,10 +309,7 @@ export function AnnotatorPage() {
       markdownText: example.markdownText,
     });
     setAnnotations([]);
-    setSelection("");
-    setSelectionAnchor(null);
-    setSelectionHighlightRects([]);
-    setSelectionToolbarPosition(null);
+    resetSelectionState();
     setEditingAnnotationId(null);
     setNoteDialogOpen(false);
     setComment("");
@@ -255,10 +325,7 @@ export function AnnotatorPage() {
 
       setDocument(opened);
       setAnnotations([]);
-      setSelection("");
-      setSelectionAnchor(null);
-      setSelectionHighlightRects([]);
-      setSelectionToolbarPosition(null);
+      resetSelectionState();
       setEditingAnnotationId(null);
       setNoteDialogOpen(false);
       setComment("");
@@ -283,6 +350,7 @@ export function AnnotatorPage() {
     const anchor = blockAnchor(block);
     setSelection(block.content);
     setSelectionAnchor(anchor);
+    setSelectionAnchors([anchor]);
     setSelectionHighlightRects([]);
     setSelectionToolbarPosition(null);
     setEditingAnnotationId(null);
@@ -298,7 +366,7 @@ export function AnnotatorPage() {
     );
 
     if (existingDelete) {
-      setAnnotations((current) => current.filter((annotation) => annotation.id !== existingDelete.id));
+      deleteAnnotation(existingDelete.id);
       setStatus("블록 삭제 annotation을 취소했습니다.");
       return;
     }
@@ -320,15 +388,19 @@ export function AnnotatorPage() {
   }
 
   function captureSelection() {
-    const anchor = getSelectionAnchor();
-    if (anchor?.selectedText) {
+    const anchors = getSelectionAnchors(documentPaneRef.current);
+    if (anchors.length > 0) {
       const selectionRange = window.getSelection()?.rangeCount ? window.getSelection()?.getRangeAt(0) : null;
       const rangeRect = selectionRange?.getBoundingClientRect();
-      const rangeRects = selectionRange ? Array.from(selectionRange.getClientRects()) : [];
+      const rangeRects = selectionRange ? Array.from(selectionRange.getClientRects()).filter(isUsefulSelectionRect) : [];
+      const toolbarRect = rangeRects[rangeRects.length - 1] ?? rangeRect;
       const paneRect = documentPaneRef.current?.getBoundingClientRect();
+      const selectedText =
+        window.getSelection()?.toString().trim() ?? anchors.map((anchor) => anchor.selectedText).join("\n");
 
-      setSelection(anchor.selectedText);
-      setSelectionAnchor(anchor);
+      setSelection(selectedText);
+      setSelectionAnchor(anchors[0] ?? null);
+      setSelectionAnchors(anchors);
       setSelectionHighlightRects(
         paneRect
           ? rangeRects.map((rect) => ({
@@ -340,10 +412,10 @@ export function AnnotatorPage() {
           : [],
       );
       setSelectionToolbarPosition(
-        rangeRect && paneRect
+        toolbarRect && paneRect
           ? {
-              left: rangeRect.right - paneRect.left + 8,
-              top: rangeRect.top - paneRect.top,
+              left: toolbarRect.right - paneRect.left + 8,
+              top: toolbarRect.top - paneRect.top,
             }
           : null,
       );
@@ -351,12 +423,42 @@ export function AnnotatorPage() {
       return;
     }
 
+    setSelectionAnchor(null);
     setSelectionToolbarPosition(null);
     setSelectionHighlightRects([]);
+    setSelectionAnchors([]);
   }
 
+  function scheduleCaptureSelection() {
+    window.setTimeout(captureSelection, 10);
+  }
+
+  useEffect(() => {
+    function handleDocumentMouseUp() {
+      window.setTimeout(() => {
+        const selection = window.getSelection();
+        const pane = documentPaneRef.current;
+        if (
+          !selection ||
+          selection.isCollapsed ||
+          selection.rangeCount === 0 ||
+          !pane ||
+          (!selection.anchorNode || !pane.contains(selection.anchorNode)) ||
+          (!selection.focusNode || !pane.contains(selection.focusNode))
+        ) {
+          return;
+        }
+
+        captureSelection();
+      }, 10);
+    }
+
+    globalThis.document.addEventListener("mouseup", handleDocumentMouseUp);
+    return () => globalThis.document.removeEventListener("mouseup", handleDocumentMouseUp);
+  });
+
   function requestSelectionNote() {
-    if (!selection || !selectionAnchor) {
+    if (!selection || activeSelectionAnchors().length === 0) {
       setStatus("텍스트를 선택하세요.");
       return;
     }
@@ -370,31 +472,21 @@ export function AnnotatorPage() {
   }
 
   function requestSelectionDelete() {
-    if (!selection || !selectionAnchor) {
+    if (!selection || activeSelectionAnchors().length === 0) {
       setStatus("텍스트를 선택하세요.");
       return;
     }
 
-    setAnnotations((current) => [
-      ...current,
-      {
-        id: crypto.randomUUID(),
-        fileName: document.fileName,
-        anchor: selectionAnchor,
-        selectedText: selection,
-        comment: "Remove this selection.",
-        type: "delete",
-        createdAt: new Date().toISOString(),
-      },
-    ]);
-    setSelection("");
-    setSelectionAnchor(null);
-    setSelectionHighlightRects([]);
-    setSelectionToolbarPosition(null);
+    const nextAnnotations = makeAnnotationsFromSelection("delete", "Remove this selection.");
+    setAnnotations((current) => [...current, ...nextAnnotations]);
+    resetSelectionState();
     setEditingAnnotationId(null);
     setNoteDialogOpen(false);
-    window.getSelection()?.removeAllRanges();
-    setStatus("선택 영역 삭제 annotation을 추가했습니다.");
+    setStatus(
+      nextAnnotations.length > 1
+        ? `${nextAnnotations.length}개 블록에 선택 영역 삭제 annotation을 추가했습니다.`
+        : "선택 영역 삭제 annotation을 추가했습니다.",
+    );
   }
 
   function editInlineAnnotation(annotationId: string) {
@@ -402,9 +494,13 @@ export function AnnotatorPage() {
     if (!annotation || annotation.type !== "note") {
       return;
     }
+    const groupAnnotations = annotation.groupId
+      ? annotations.filter((candidate) => candidate.groupId === annotation.groupId)
+      : [annotation];
 
-    setSelection(annotation.selectedText);
-    setSelectionAnchor(annotation.anchor);
+    setSelection(groupAnnotations.map((candidate) => candidate.selectedText).join("\n"));
+    setSelectionAnchor(groupAnnotations[0]?.anchor ?? annotation.anchor);
+    setSelectionAnchors(groupAnnotations.map((candidate) => candidate.anchor));
     setAnnotationType("note");
     setComment(annotation.comment);
     setEditingAnnotationId(annotation.id);
@@ -418,27 +514,24 @@ export function AnnotatorPage() {
     setNoteDialogOpen(false);
     setEditingAnnotationId(null);
     setComment("");
-    setSelection("");
-    setSelectionAnchor(null);
-    setSelectionHighlightRects([]);
-    setSelectionToolbarPosition(null);
-    window.getSelection()?.removeAllRanges();
+    resetSelectionState();
   }
 
   function saveDialogAnnotation() {
-    if (!selection || !selectionAnchor || !comment.trim()) {
+    if (!selection || activeSelectionAnchors().length === 0 || !comment.trim()) {
       setStatus("Annotation 내용을 입력하세요.");
       return;
     }
 
     if (editingAnnotationId) {
+      const editingAnnotation = annotations.find((annotation) => annotation.id === editingAnnotationId);
+      const editingGroupId = editingAnnotation?.groupId;
+
       setAnnotations((current) =>
         current.map((annotation) =>
-          annotation.id === editingAnnotationId
+          annotation.id === editingAnnotationId || (editingGroupId !== undefined && annotation.groupId === editingGroupId)
             ? {
                 ...annotation,
-                anchor: selectionAnchor,
-                selectedText: selection,
                 comment: comment.trim(),
                 type: annotationType,
               }
@@ -447,45 +540,36 @@ export function AnnotatorPage() {
       );
       setStatus("Annotation을 수정했습니다.");
     } else {
-      setAnnotations((current) => [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          fileName: document.fileName,
-          anchor: selectionAnchor,
-          selectedText: selection,
-          comment: comment.trim(),
-          type: annotationType,
-          createdAt: new Date().toISOString(),
-        },
-      ]);
-      setStatus("Annotation을 추가했습니다.");
+      const nextAnnotations = makeAnnotationsFromSelection(annotationType, comment.trim());
+      setAnnotations((current) => [...current, ...nextAnnotations]);
+      setStatus(
+        nextAnnotations.length > 1
+          ? `${nextAnnotations.length}개 블록에 annotation을 추가했습니다.`
+          : "Annotation을 추가했습니다.",
+      );
     }
 
     setComment("");
-    setSelection("");
-    setSelectionAnchor(null);
-    setSelectionHighlightRects([]);
-    setSelectionToolbarPosition(null);
+    resetSelectionState();
     setEditingAnnotationId(null);
     setNoteDialogOpen(false);
-    window.getSelection()?.removeAllRanges();
   }
 
   function addAnnotation() {
-    if (!selection || !selectionAnchor || !comment.trim()) {
+    if (!selection || activeSelectionAnchors().length === 0 || !comment.trim()) {
       setStatus("텍스트를 선택하고 comment를 입력하세요.");
       return;
     }
 
     if (editingAnnotationId) {
+      const editingAnnotation = annotations.find((annotation) => annotation.id === editingAnnotationId);
+      const editingGroupId = editingAnnotation?.groupId;
+
       setAnnotations((current) =>
         current.map((annotation) =>
-          annotation.id === editingAnnotationId
+          annotation.id === editingAnnotationId || (editingGroupId !== undefined && annotation.groupId === editingGroupId)
             ? {
                 ...annotation,
-                anchor: selectionAnchor,
-                selectedText: selection,
                 comment: comment.trim(),
                 type: annotationType,
               }
@@ -493,49 +577,41 @@ export function AnnotatorPage() {
         ),
       );
       setComment("");
-      setSelection("");
-      setSelectionAnchor(null);
-      setSelectionHighlightRects([]);
-      setSelectionToolbarPosition(null);
+      resetSelectionState();
       setEditingAnnotationId(null);
       setNoteDialogOpen(false);
-      window.getSelection()?.removeAllRanges();
       setStatus("Annotation을 수정했습니다.");
       return;
     }
 
-    setAnnotations((current) => [
-      ...current,
-      {
-        id: crypto.randomUUID(),
-        fileName: document.fileName,
-        anchor: selectionAnchor,
-        selectedText: selection,
-        comment: comment.trim(),
-        type: annotationType,
-        createdAt: new Date().toISOString(),
-      },
-    ]);
+    const nextAnnotations = makeAnnotationsFromSelection(annotationType, comment.trim());
+    setAnnotations((current) => [...current, ...nextAnnotations]);
     setComment("");
-    setSelection("");
-    setSelectionAnchor(null);
-    setSelectionHighlightRects([]);
-    setSelectionToolbarPosition(null);
+    resetSelectionState();
     setEditingAnnotationId(null);
     setNoteDialogOpen(false);
-    window.getSelection()?.removeAllRanges();
-    setStatus("Annotation을 추가했습니다.");
+    setStatus(
+      nextAnnotations.length > 1
+        ? `${nextAnnotations.length}개 블록에 annotation을 추가했습니다.`
+        : "Annotation을 추가했습니다.",
+    );
   }
 
   function deleteAnnotation(annotationId: string) {
-    setAnnotations((current) => current.filter((annotation) => annotation.id !== annotationId));
+    const target = annotations.find((annotation) => annotation.id === annotationId);
+    const targetGroupId = target?.groupId;
+
+    setAnnotations((current) =>
+      current.filter((annotation) =>
+        targetGroupId ? annotation.groupId !== targetGroupId : annotation.id !== annotationId,
+      ),
+    );
     if (editingAnnotationId === annotationId) {
       setEditingAnnotationId(null);
-      setSelection("");
-      setSelectionAnchor(null);
+      resetSelectionState();
       setComment("");
     }
-    setStatus("Annotation을 삭제했습니다.");
+    setStatus(targetGroupId ? "묶음 annotation을 삭제했습니다." : "Annotation을 삭제했습니다.");
   }
 
   async function copyExport() {
@@ -585,7 +661,7 @@ export function AnnotatorPage() {
       <section className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_420px]">
         <div className="min-h-0 bg-muted/30">
           <ScrollArea className="h-full">
-            <div className="relative mx-auto max-w-5xl p-6" ref={documentPaneRef} onMouseUp={captureSelection}>
+            <div className="relative mx-auto max-w-5xl p-6" ref={documentPaneRef} onMouseUp={scheduleCaptureSelection}>
               <Card>
                 <CardHeader>
                   <CardTitle>{title}</CardTitle>
@@ -684,7 +760,7 @@ export function AnnotatorPage() {
                             {selection || "문서에서 텍스트를 드래그하세요."}
                           </div>
                           <FieldDescription>
-                            {selectionAnchor
+                            {selectionAnchors.length > 0 || selectionAnchor
                               ? "선택 범위가 저장되었습니다."
                               : "선택하면 block anchor와 offset을 내부적으로 저장합니다."}
                           </FieldDescription>
@@ -736,7 +812,7 @@ export function AnnotatorPage() {
 
                   <div className="flex items-center justify-between">
                     <h2 className="text-sm font-medium">Annotations</h2>
-                    <Badge variant="outline">{annotations.length}</Badge>
+                    <Badge variant="outline">{visibleAnnotations.length}</Badge>
                   </div>
 
                   {annotations.length === 0 ? (
@@ -752,31 +828,39 @@ export function AnnotatorPage() {
                       </EmptyHeader>
                     </Empty>
                   ) : (
-                    annotations.map((annotation) => (
-                      <Card key={annotation.id} size="sm">
-                        <CardHeader>
-                          <CardTitle className="line-clamp-2 text-sm">{annotation.selectedText}</CardTitle>
-                          <CardDescription>{annotation.type}</CardDescription>
-                          <CardAction>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon-sm"
-                              onClick={() => deleteAnnotation(annotation.id)}
-                              aria-label="Delete annotation"
-                            >
-                              <Trash2 aria-hidden="true" />
-                            </Button>
-                          </CardAction>
-                        </CardHeader>
-                        <CardContent className="flex flex-col gap-2">
-                          <Badge className="w-fit" variant="secondary">
-                            {annotation.type}
-                          </Badge>
-                          <p className="text-sm text-muted-foreground">{annotation.comment}</p>
-                        </CardContent>
-                      </Card>
-                    ))
+                    visibleAnnotations.map((annotation) => {
+                      const groupAnnotations = annotation.groupId
+                        ? annotations.filter((candidate) => candidate.groupId === annotation.groupId)
+                        : [annotation];
+                      const selectedText = groupAnnotations.map((candidate) => candidate.selectedText).join("\n");
+
+                      return (
+                        <Card key={annotation.id} size="sm">
+                          <CardHeader>
+                            <CardTitle className="line-clamp-2 text-sm">{selectedText}</CardTitle>
+                            <CardDescription>{annotation.type}</CardDescription>
+                            <CardAction>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon-sm"
+                                onClick={() => deleteAnnotation(annotation.id)}
+                                aria-label="Delete annotation"
+                              >
+                                <Trash2 aria-hidden="true" />
+                              </Button>
+                            </CardAction>
+                          </CardHeader>
+                          <CardContent className="flex flex-col gap-2">
+                            <Badge className="w-fit" variant="secondary">
+                              {annotation.type}
+                              {groupAnnotations.length > 1 ? ` · ${groupAnnotations.length} blocks` : ""}
+                            </Badge>
+                            <p className="text-sm text-muted-foreground">{annotation.comment}</p>
+                          </CardContent>
+                        </Card>
+                      );
+                    })
                   )}
                 </div>
               </ScrollArea>

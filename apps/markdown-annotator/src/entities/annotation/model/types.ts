@@ -11,6 +11,7 @@ export type AnnotationAnchor = {
 
 export type AnnotationDraft = {
   id: string;
+  groupId?: string;
   fileName: string;
   anchor: AnnotationAnchor;
   selectedText: string;
