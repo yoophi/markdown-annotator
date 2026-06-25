@@ -28,3 +28,43 @@ export const Basic: Story = {
 `),
   },
 };
+
+const blockActionMarkdown = `# Block Actions
+
+Hover this paragraph to show the delete and comment controls for the whole block.
+
+> This quoted block can also be annotated as a complete block.
+
+\`\`\`ts
+const enabled = true;
+\`\`\`
+`;
+const blockActionBlocks = parseMarkdownToBlocks(blockActionMarkdown);
+
+export const BlockActions: Story = {
+  args: {
+    blocks: blockActionBlocks,
+    deletedBlockIds: new Set(blockActionBlocks[1] ? [blockActionBlocks[1].id] : []),
+    noteAnnotationsByBlock: new Map(
+      blockActionBlocks[2]
+        ? [
+            [
+              blockActionBlocks[2].id,
+              [
+                {
+                  id: "note-1",
+                  comment: "This block has a note annotation.",
+                },
+              ],
+            ],
+          ]
+        : [],
+    ),
+    onRequestBlockComment: (block) => {
+      console.log("comment block", block.id);
+    },
+    onRequestBlockDelete: (block) => {
+      console.log("delete block", block.id);
+    },
+  },
+};

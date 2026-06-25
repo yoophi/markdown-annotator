@@ -46,12 +46,14 @@ import { Textarea } from "@/components/ui/textarea";
 import type { AnnotationAnchor, AnnotationDraft, AnnotationType } from "@/entities/annotation/model/types";
 import { exampleMarkdownDocuments } from "@/entities/document/model/examples";
 import type { MarkdownDocument } from "@/entities/document/model/types";
+import type { MarkdownBlock } from "@/entities/markdown-block/model/types";
 import { formatAnnotationsForAgent } from "@/features/export-annotations/formatAnnotationsForAgent";
 import { parseMarkdownToBlocks } from "@/features/markdown-renderer/parseMarkdownToBlocks";
 import { openMarkdownDocument } from "@/features/open-document/openMarkdownDocument";
-import { MarkdownViewer } from "@/shared/ui/MarkdownViewer";
+import { MarkdownViewer, type MarkdownViewerBlockNote } from "@/shared/ui/MarkdownViewer";
 
 const annotationTypes: Array<{ value: AnnotationType; label: string }> = [
+  { value: "delete", label: "Delete" },
   { value: "change-request", label: "Change request" },
   { value: "question", label: "Question" },
   { value: "note", label: "Note" },
@@ -118,6 +120,31 @@ export function AnnotatorPage() {
     () => new Set(annotations.map((annotation) => annotation.anchor.blockId)),
     [annotations],
   );
+  const deletedBlockIds = useMemo(
+    () =>
+      new Set(
+        annotations
+          .filter((annotation) => annotation.type === "delete")
+          .map((annotation) => annotation.anchor.blockId),
+      ),
+    [annotations],
+  );
+  const noteAnnotationsByBlock = useMemo(() => {
+    const notes = new Map<string, MarkdownViewerBlockNote[]>();
+
+    annotations
+      .filter((annotation) => annotation.type === "note")
+      .forEach((annotation) => {
+        const blockNotes = notes.get(annotation.anchor.blockId) ?? [];
+        blockNotes.push({
+          id: annotation.id,
+          comment: annotation.comment,
+        });
+        notes.set(annotation.anchor.blockId, blockNotes);
+      });
+
+    return notes;
+  }, [annotations]);
 
   function loadExample(exampleId: string | null) {
     if (!exampleId) {
@@ -158,6 +185,53 @@ export function AnnotatorPage() {
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "파일을 열 수 없습니다.");
     }
+  }
+
+  function blockAnchor(block: MarkdownBlock): AnnotationAnchor {
+    return {
+      blockId: block.id,
+      startOffset: 0,
+      endOffset: block.content.length,
+      selectedText: block.content,
+      startLine: block.startLine,
+      endLine: block.endLine,
+    };
+  }
+
+  function requestBlockComment(block: MarkdownBlock) {
+    const anchor = blockAnchor(block);
+    setSelection(block.content);
+    setSelectionAnchor(anchor);
+    setAnnotationType("note");
+    setComment("");
+    setStatus("블록 코멘트 입력을 시작했습니다.");
+  }
+
+  function requestBlockDelete(block: MarkdownBlock) {
+    const existingDelete = annotations.find(
+      (annotation) => annotation.type === "delete" && annotation.anchor.blockId === block.id,
+    );
+
+    if (existingDelete) {
+      setAnnotations((current) => current.filter((annotation) => annotation.id !== existingDelete.id));
+      setStatus("블록 삭제 annotation을 취소했습니다.");
+      return;
+    }
+
+    const anchor = blockAnchor(block);
+    setAnnotations((current) => [
+      ...current,
+      {
+        id: crypto.randomUUID(),
+        fileName: document.fileName,
+        anchor,
+        selectedText: block.content,
+        comment: "Remove this block.",
+        type: "delete",
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+    setStatus("블록 삭제 annotation을 추가했습니다.");
   }
 
   function captureSelection() {
@@ -256,7 +330,14 @@ export function AnnotatorPage() {
                   </CardAction>
                 </CardHeader>
                 <CardContent>
-                  <MarkdownViewer blocks={blocks} annotatedBlockIds={annotatedBlockIds} />
+                  <MarkdownViewer
+                    blocks={blocks}
+                    annotatedBlockIds={annotatedBlockIds}
+                    deletedBlockIds={deletedBlockIds}
+                    noteAnnotationsByBlock={noteAnnotationsByBlock}
+                    onRequestBlockComment={requestBlockComment}
+                    onRequestBlockDelete={requestBlockDelete}
+                  />
                 </CardContent>
               </Card>
             </div>

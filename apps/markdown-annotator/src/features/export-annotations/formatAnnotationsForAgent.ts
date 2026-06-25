@@ -31,6 +31,18 @@ export function formatAnnotationsForAgent(
         return (a.anchor.startOffset ?? 0) - (b.anchor.startOffset ?? 0);
       })
       .map((annotation, index) => {
+        if (annotation.type === "delete") {
+          return [
+            `## ${index + 1}. [delete] Remove this block`,
+            "",
+            "```markdown",
+            annotation.selectedText,
+            "```",
+            "",
+            `> ${annotation.comment}`,
+          ].join("\n");
+        }
+
         return [
           `## ${index + 1}. [${annotation.type}] Feedback on: "${annotation.selectedText}"`,
           "",

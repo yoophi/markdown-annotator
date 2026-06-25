@@ -1,4 +1,4 @@
-export type AnnotationType = "question" | "change-request" | "note" | "approve";
+export type AnnotationType = "delete" | "question" | "change-request" | "note" | "approve";
 
 export type AnnotationAnchor = {
   blockId: string;
