@@ -1,6 +1,21 @@
 import type { AnnotationDraft } from "@/entities/annotation/model/types";
 import type { MarkdownBlock } from "@/entities/markdown-block/model/types";
 
+function formatLineRange(annotation: AnnotationDraft) {
+  if (annotation.anchor.startLine === undefined) {
+    return null;
+  }
+
+  if (
+    annotation.anchor.endLine === undefined ||
+    annotation.anchor.endLine === annotation.anchor.startLine
+  ) {
+    return `- Line: ${annotation.anchor.startLine}`;
+  }
+
+  return `- Lines: ${annotation.anchor.startLine}-${annotation.anchor.endLine}`;
+}
+
 export function formatAnnotationsForAgent(
   fileName: string,
   annotations: AnnotationDraft[],
@@ -35,17 +50,21 @@ export function formatAnnotationsForAgent(
           return [
             `## ${index + 1}. [delete] Remove this block`,
             "",
+            formatLineRange(annotation),
             "```markdown",
             annotation.selectedText,
             "```",
             "",
             `> ${annotation.comment}`,
-          ].join("\n");
+          ]
+            .filter(Boolean)
+            .join("\n");
         }
 
         return [
           `## ${index + 1}. [${annotation.type}] Feedback on: "${annotation.selectedText}"`,
           "",
+          formatLineRange(annotation),
           annotation.anchor.startOffset !== undefined && annotation.anchor.endOffset !== undefined
             ? `- Offset: ${annotation.anchor.startOffset}-${annotation.anchor.endOffset}`
             : null,
