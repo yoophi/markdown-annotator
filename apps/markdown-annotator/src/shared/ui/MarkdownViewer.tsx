@@ -67,7 +67,7 @@ function InlineAnnotationMark({
     >
       {children}
       <span
-        className="absolute -right-3 top-0 hidden translate-x-full -translate-y-1/2 items-center gap-1 rounded-lg border bg-popover p-1 shadow-sm before:absolute before:-left-3 before:top-0 before:h-full before:w-3 before:content-[''] group-hover/inline-annotation:inline-flex group-focus-within/inline-annotation:inline-flex"
+        className="absolute -right-3 top-0 z-10 hidden translate-x-full -translate-y-1/2 items-center gap-1 rounded-lg border bg-popover p-1 shadow-sm before:absolute before:-left-3 before:top-0 before:h-full before:w-3 before:content-[''] group-hover/inline-annotation:inline-flex group-focus-within/inline-annotation:inline-flex"
         onMouseDown={handleActionMouseDown}
         onMouseUp={(event) => event.stopPropagation()}
         onClick={(event) => event.stopPropagation()}
@@ -240,7 +240,7 @@ function BlockShell({
     >
       {hasNotes ? (
         <div
-          className="absolute right-2 top-0"
+          className="absolute right-2 top-0 z-20"
           onMouseDown={handleToolbarMouseDown}
           onMouseUp={handleToolbarInteraction}
           onClick={handleToolbarInteraction}
@@ -277,7 +277,7 @@ function BlockShell({
 
       <div
         className={cn(
-          "absolute right-2 top-0 hidden items-center gap-1 rounded-lg border bg-popover p-1 shadow-sm",
+          "absolute right-2 top-0 z-30 hidden items-center gap-1 rounded-lg border bg-popover p-1 shadow-sm",
           "group-hover/markdown-block:flex group-focus-within/markdown-block:flex",
           hasNotes && "right-11",
         )}
@@ -321,6 +321,7 @@ function BlockShell({
       </div>
       <div
         className={cn(
+          "relative z-0",
           deleted &&
             "text-destructive line-through decoration-destructive opacity-70 [&_*]:text-destructive",
         )}
