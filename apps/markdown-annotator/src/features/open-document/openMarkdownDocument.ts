@@ -1,5 +1,5 @@
 import { open } from "@tauri-apps/plugin-dialog";
-import { readMarkdownDocument } from "@/entities/document/api/documentApi";
+import { requestOpenDocumentTab, requestOpenDocumentWindow } from "@/entities/document/api/documentApi";
 import type { MarkdownDocument } from "@/entities/document/model/types";
 
 function isTauriRuntime() {
@@ -52,14 +52,38 @@ export async function openMarkdownDocument(): Promise<MarkdownDocument | null> {
     return openMarkdownDocumentFromBrowser();
   }
 
+  const selected = await selectMarkdownDocumentPath();
+  if (!selected) {
+    return null;
+  }
+
+  await requestOpenDocumentWindow(selected);
+  return null;
+}
+
+export async function openMarkdownDocumentTab(): Promise<MarkdownDocument | null> {
+  if (!isTauriRuntime()) {
+    return openMarkdownDocumentFromBrowser();
+  }
+
+  const selected = await selectMarkdownDocumentPath();
+  if (!selected) {
+    return null;
+  }
+
+  await requestOpenDocumentTab(selected);
+  return null;
+}
+
+export function getDocumentPathFromWindowQuery() {
+  return new URLSearchParams(window.location.search).get("path");
+}
+
+async function selectMarkdownDocumentPath() {
   const selected = await open({
     multiple: false,
     filters: [{ name: "Markdown", extensions: ["md", "markdown", "mdx"] }],
   });
 
-  if (typeof selected !== "string") {
-    return null;
-  }
-
-  return readMarkdownDocument(selected);
+  return typeof selected === "string" ? selected : null;
 }
