@@ -5,6 +5,7 @@ use crate::{
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use std::{
     collections::hash_map::DefaultHasher,
+    env,
     hash::{Hash, Hasher},
     path::{Path, PathBuf},
 };
@@ -20,14 +21,7 @@ pub fn read_markdown_file(path: String) -> Result<MarkdownDocument, String> {
 
 #[tauri::command]
 pub fn request_open_document_window(app: tauri::AppHandle, path: String) -> Result<(), String> {
-    let document_path = resolve_markdown_file(&path)?;
-    let label = label_for_document(&document_path);
-
-    if focus_if_open(&app, &label) {
-        return Ok(());
-    }
-
-    create_document_window(&app, &label, &document_path).map(|_| ())
+    open_document_window_path(&app, &path)
 }
 
 #[tauri::command]
@@ -67,6 +61,50 @@ pub fn open_welcome_window(app: &tauri::AppHandle) {
         Ok(window) => show_native_tab_bar(&window),
         Err(error) => eprintln!("failed to create main window: {error}"),
     }
+}
+
+pub fn open_document_window_path(app: &tauri::AppHandle, path: &str) -> Result<(), String> {
+    let document_path = resolve_markdown_file(path)?;
+    let label = label_for_document(&document_path);
+
+    if focus_if_open(app, &label) {
+        return Ok(());
+    }
+
+    create_document_window(app, &label, &document_path).map(|_| ())
+}
+
+pub fn open_document_from_cli_args(
+    app: &tauri::AppHandle,
+    argv: &[String],
+    cwd: &Path,
+) -> Result<bool, String> {
+    let Some(path) = cli_path_arg(argv) else {
+        return Ok(false);
+    };
+
+    let absolute_path = resolve_cli_path(path, cwd)?;
+    open_document_window_path(app, &absolute_path.to_string_lossy())?;
+    Ok(true)
+}
+
+pub fn focus_any_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.webview_windows().into_values().next() {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+        show_native_tab_bar(&window);
+    }
+}
+
+pub fn initial_cli_args() -> Result<Option<(Vec<String>, PathBuf)>, String> {
+    let argv = env::args().collect::<Vec<_>>();
+    if cli_path_arg(&argv).is_none() {
+        return Ok(None);
+    }
+
+    let cwd = env::current_dir().map_err(|error| format!("failed to read cwd: {error}"))?;
+    Ok(Some((argv, cwd)))
 }
 
 fn create_document_window(
@@ -191,6 +229,23 @@ fn resolve_markdown_file(raw_path: &str) -> Result<PathBuf, String> {
     }
 
     Ok(canonical)
+}
+
+fn cli_path_arg(argv: &[String]) -> Option<&str> {
+    argv.get(1)
+        .map(String::as_str)
+        .filter(|path| !path.is_empty())
+}
+
+fn resolve_cli_path(raw_path: &str, cwd: &Path) -> Result<PathBuf, String> {
+    let path = PathBuf::from(raw_path);
+    let candidate = if path.is_absolute() {
+        path
+    } else {
+        cwd.join(path)
+    };
+
+    Ok(candidate)
 }
 
 fn is_markdown_file(path: &Path) -> bool {

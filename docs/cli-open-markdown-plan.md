@@ -1,14 +1,14 @@
-# Markdown Annotator CLI 파일 열기 기능 계획
+# Markdown Annotator CLI 파일 열기 기능
 
 ## 현재 멀티 윈도우 구현과의 관계
 
-이 문서는 후속 CLI 작업 계획이다. 현재 앱에는 이미 native window/tab 기반 문서 열기 command가 구현되어 있다.
+이 문서는 CLI 파일 열기 기능의 구현 내용을 정리한다. 앱에는 이미 native window/tab 기반 문서 열기 command가 구현되어 있으며, CLI는 그 흐름을 재사용한다.
 
 - `request_open_document_window`: 독립 native window로 문서를 연다.
 - `request_open_document_tab`: 현재 window의 macOS native tab group에 문서를 붙인다.
 - `read_markdown_file`: query path 또는 선택된 path의 Markdown 내용을 읽는다.
 
-CLI 구현은 새 window/session 모델을 다시 만들지 않고, 앱 실행 인자를 위 command 흐름과 같은 path 검증, deterministic window label, 기존 window focus 정책에 연결한다.
+CLI 구현은 새 window/session 모델을 만들지 않고, 앱 실행 인자를 위 command 흐름과 같은 path 검증, deterministic window label, 기존 window focus 정책에 연결한다.
 
 ## 목표
 
@@ -39,7 +39,7 @@ flowchart TD
     F --> G{"앱 실행 상태"}
     G -- "미실행" --> H["초기 창 생성"]
     G -- "실행 중" --> I["single-instance 콜백"]
-    H --> J["open-document 이벤트 또는 초기 인자로 문서 로드"]
+    H --> J["기존 document window 생성 흐름으로 문서 로드"]
     I --> K{"같은 파일을 연 창 존재"}
     K -- "예" --> L["기존 창 show/unminimize/focus"]
     L --> M["window-highlight 이벤트"]
@@ -54,20 +54,33 @@ flowchart TD
 파일 위치:
 
 - `apps/markdown-annotator/src-tauri/src/bin/ma.rs`
+- `apps/markdown-annotator/src-tauri/src/bin/ma-dev.rs`
+- `apps/markdown-annotator/src-tauri/src/cli_launcher.rs`
 
 역할:
 
-- `ma <filename>` 인자를 읽는다.
+- `ma <filename>` 또는 `ma-dev <filename>` 인자를 읽는다.
 - 상대 경로는 CLI 실행 시점의 현재 작업 디렉터리 기준으로 절대 경로화한다.
 - `canonicalize`로 실제 파일 존재 여부를 확인한다.
 - 허용 확장자는 우선 `md`, `markdown`, `mdx`로 둔다.
-- 앱 실행 파일을 찾아 절대 파일 경로를 인자로 넘긴다.
+- 앱 실행 파일을 찾아 canonical 파일 경로를 인자로 넘긴다.
 
-앱 실행 파일 탐색 우선순위:
+릴리즈용 `ma`의 앱 실행 파일 탐색 우선순위:
 
 1. `MARKDOWN_ANNOTATOR_APP_PATH` 환경 변수
-2. CLI 바이너리와 같은 디렉터리 또는 macOS bundle sibling path
+2. macOS bundle sibling path
 3. `/Applications/Markdown Annotator.app/Contents/MacOS/markdown-annotator`
+
+릴리즈용 `ma`는 Vite dev server를 시작하지 않고, `target/debug/markdown-annotator`도 자동 탐색하지 않는다. 설치된 앱 또는 명시적인 `MARKDOWN_ANNOTATOR_APP_PATH`만 대상으로 한다.
+
+개발용 `ma-dev`의 앱 실행 파일 탐색 우선순위:
+
+1. `MARKDOWN_ANNOTATOR_APP_PATH` 환경 변수
+2. `ma-dev`와 같은 `target/debug` 디렉터리의 `markdown-annotator`
+
+개발용 `ma-dev`는 `localhost:1420`이 열려 있지 않으면 앱 package directory에서 `pnpm run dev`를 먼저 시작한 뒤 debug 앱 실행 파일을 띄운다.
+
+또한 `target/debug/markdown-annotator`가 없거나 `ma-dev`보다 오래된 경우에는 `cargo build --bin markdown-annotator`를 먼저 실행한다. 이렇게 해야 `ma-dev`만 새로 빌드되고 실제 앱 바이너리는 오래된 상태로 남아 문서 인자 처리가 누락되는 문제를 피할 수 있다.
 
 오류 정책:
 
@@ -93,84 +106,70 @@ tauri-plugin-single-instance = "2"
 
 첫 실행과 두 번째 실행 모두 같은 파일 경로 해석 로직을 사용한다.
 
-### 3. 창 세션 상태 추가
+### 3. 기존 document window 흐름 재사용
 
-현재 프론트엔드가 문서 상태를 로컬 React state로 들고 있으므로, 백엔드에는 최소한의 창-파일 매핑만 둔다.
-
-```rust
-struct AppState {
-    windows: Mutex<HashMap<String, WindowSession>>,
-    window_counter: AtomicU32,
-}
-
-struct WindowSession {
-    document_path: PathBuf,
-    canonical_document_path: PathBuf,
-}
-```
+현재 구현은 별도 창 세션 상태를 추가하지 않는다. canonical path를 기준으로 deterministic window label을 만들고, 같은 label의 window가 이미 있으면 `show`, `unminimize`, `set_focus`를 호출한다.
 
 책임 분리:
 
 - `domain`: Markdown 문서 모델과 파일 읽기 port 유지
-- `application`: 파일 경로 검증, 창 세션 조회에 필요한 순수 로직 배치
-- `inbound`: Tauri command, Tauri event, window 생성 및 focus 처리
+- `application`: Markdown 파일 읽기 use case 유지
+- `inbound`: Tauri command, single-instance callback, window 생성 및 focus 처리
 - `infrastructure`: 파일 시스템 기반 Markdown reader 유지
 
 ## 백엔드 창 처리
 
+CLI와 UI command는 모두 `open_document_window_path`로 합류한다.
+
+```mermaid
+flowchart LR
+    A["ma <filename>"] --> B["앱 실행 인자"]
+    C["request_open_document_window"] --> D["open_document_window_path"]
+    B --> E["initial args 또는 single-instance callback"]
+    E --> D
+    D --> F["resolve_markdown_file"]
+    F --> G["label_for_document"]
+    G --> H{"window 존재?"}
+    H -- "예" --> I["focus_if_open"]
+    H -- "아니오" --> J["create_document_window"]
+```
+
 ```mermaid
 flowchart TD
-    A["handle_new_instance(argv, cwd)"] --> B["파일 경로 resolve"]
+    A["single-instance callback(argv, cwd)"] --> B["CLI 경로를 cwd 기준으로 절대 경로화"]
     B --> C{"resolve 성공"}
     C -- "아니오" --> D["임의 기존 창 focus"]
     C -- "예" --> E["canonical path 생성"]
-    E --> F{"같은 canonical path 창 존재"}
-    F -- "예" --> G["focus_window_for_document"]
+    E --> F{"deterministic label window 존재"}
+    F -- "예" --> G["focus_if_open"]
     F -- "아니오" --> H["create_document_window"]
     G --> I["window-highlight emit"]
-    H --> J["세션 등록"]
-    J --> K["WebviewWindowBuilder로 새 창 생성"]
-    K --> L["open-document emit"]
+    H --> J["index.html?path=... document window 생성"]
 ```
 
-필요 함수 후보:
+주요 함수:
 
-- `resolve_document_path(raw_arg: Option<&str>, cwd: &Path) -> Result<PathBuf, String>`
-- `find_window_for_document(app: &AppHandle, path: &Path) -> Option<String>`
-- `focus_window(app: &AppHandle, label: &str)`
-- `create_document_window(app: &AppHandle, path: PathBuf)`
-- `register_window_session(label: String, path: PathBuf)`
-- `cleanup_window(window: &tauri::Window)`
+- `open_document_from_cli_args(app: &AppHandle, argv: &[String], cwd: &Path) -> Result<bool, String>`
+- `open_document_window_path(app: &AppHandle, path: &str) -> Result<(), String>`
+- `resolve_markdown_file(raw_path: &str) -> Result<PathBuf, String>`
+- `label_for_document(path: &Path) -> String`
+- `focus_if_open(app: &AppHandle, label: &str) -> bool`
+- `create_document_window(app: &AppHandle, label: &str, path: &Path)`
 
 창 label 예:
 
 - 기본 창: `main`
-- CLI로 추가 생성된 창: `annotator-1`, `annotator-2`
+- 문서 창: `document-{canonical-path-hash}`
 
 ## 프론트엔드 이벤트 처리
 
-이벤트 이름:
+CLI 파일 열기는 프론트엔드에 새 이벤트를 추가하지 않는다. Tauri backend가 `index.html?path=...` URL로 document window를 만들고, 기존 `AnnotatorPage`가 query string의 `path`를 읽어 `readMarkdownDocument(path)`를 호출한다.
 
-- `markdown-annotator://open-document`
+유지되는 이벤트 이름:
+
 - `markdown-annotator://window-highlight`
 
-payload:
-
-```ts
-type OpenDocumentPayload = {
-  path: string;
-};
-```
-
-추가 위치 후보:
-
-- `apps/markdown-annotator/src/entities/document/api/documentApi.ts`
-- `apps/markdown-annotator/src/features/open-document/listenToDocumentOpenRequests.ts`
-- `apps/markdown-annotator/src/pages/annotator/AnnotatorPage.tsx`
-
-`open-document` 이벤트 처리 시 기존 `readMarkdownDocument(path)`를 재사용한다.
-
-문서 교체 시 초기화할 상태:
+문서 window 생성 시 기존 query path 로딩에서 초기화할 상태:
 
 - `annotations`
 - selection 관련 state
@@ -194,7 +193,7 @@ sequenceDiagram
     participant API as documentApi
 
     CLI->>Tauri: markdown file path
-    Tauri->>Page: markdown-annotator://open-document
+    Tauri->>Page: index.html?path=...
     Page->>API: readMarkdownDocument(path)
     API->>Tauri: invoke read_markdown_file
     Tauri-->>API: MarkdownDocument
@@ -225,6 +224,8 @@ Rust 검증:
 ```bash
 cd apps/markdown-annotator/src-tauri
 cargo check
+cargo check --bin ma
+cargo check --bin ma-dev
 ```
 
 TypeScript 검증:
@@ -241,24 +242,39 @@ pnpm --filter @yoophi/markdown-annotator check-types
 4. 존재하지 않는 파일을 넘기면 CLI가 오류를 출력하고 종료 코드 1로 끝난다.
 5. Markdown이 아닌 파일을 넘기면 CLI가 오류를 출력하고 종료 코드 1로 끝난다.
 6. 파일 열기 버튼으로 연 문서와 CLI로 연 문서가 같은 `MarkdownDocument` 모델을 사용한다.
+7. `ma`는 설치 앱이 없고 `MARKDOWN_ANNOTATOR_APP_PATH`도 없으면 오류를 출력하고 종료 코드 1로 끝난다.
+8. `ma-dev`는 `target/debug/markdown-annotator`와 Vite dev server를 개발용으로 사용한다.
+
+실제 GUI 실행 없이 런처 success path를 검증할 때는 다음처럼 앱 실행 파일을 대체할 수 있다.
+
+```bash
+MARKDOWN_ANNOTATOR_APP_PATH=/usr/bin/true cargo run --bin ma -- ../../../README.md
+```
+
+개발 산출물을 직접 검증할 때는 다음 명령을 사용할 수 있다.
+
+```bash
+./apps/markdown-annotator/src-tauri/target/debug/ma-dev AGENTS.md
+```
 
 ## 위험 요소와 대응
 
 | 위험 요소 | 대응 |
 | --- | --- |
-| 프론트가 이벤트를 구독하기 전에 백엔드가 `open-document`를 emit할 수 있음 | 초기 실행 인자는 백엔드 세션에 저장하고, 프론트가 `get_initial_document_request` command로 한 번 조회하는 보완책을 둔다. |
+| 프론트가 이벤트를 구독하기 전에 백엔드가 `open-document`를 emit할 수 있음 | 이벤트 emit 대신 `index.html?path=...`로 document window를 만들기 때문에 초기 구독 순서에 의존하지 않는다. |
 | 같은 파일 판정이 상대 경로 차이로 실패할 수 있음 | 백엔드에서 항상 `canonicalize` 결과로 비교한다. |
-| 창 label 충돌 가능성 | `AtomicU32` 기반 counter로 label 생성 후 세션 등록 전에 중복을 확인한다. |
+| 창 label 충돌 가능성 | canonical path hash 기반 deterministic label을 사용한다. |
 | 도메인이 Tauri 타입에 의존할 수 있음 | 창 생성, focus, emit은 `inbound` 또는 Tauri adapter에만 둔다. |
-| CLI 설치 위치가 사용자 PATH에 없을 수 있음 | 설치 command 결과에 설치 경로와 PATH 안내 문구를 포함한다. |
+| CLI 설치 위치가 사용자 PATH에 없을 수 있음 | 릴리즈 설치 command 결과에 `ma` 설치 경로와 PATH 안내 문구를 포함한다. |
+| 개발용 특수 처리가 릴리즈 CLI에 섞일 수 있음 | `ma-dev`와 `ma`를 별도 bin target으로 나누고, dev server 시작은 `ma-dev`에만 둔다. |
 
 ## 권장 작업 순서
 
-1. `ma.rs` CLI 런처를 추가한다.
-2. 백엔드에 파일 경로 resolve 유틸과 창 세션 상태를 추가한다.
+1. `ma.rs`, `ma-dev.rs`, `cli_launcher.rs` 런처를 추가한다.
+2. 백엔드에 파일 경로 resolve 유틸과 CLI 인자 처리 함수를 추가한다.
 3. `tauri-plugin-single-instance`를 연결한다.
 4. 기존 창 포커스와 새 창 생성 로직을 구현한다.
-5. 프론트엔드에서 `open-document`, `window-highlight` 이벤트를 구독한다.
+5. 기존 프론트엔드의 query path 로딩과 `window-highlight` 이벤트 구독을 재사용한다.
 6. 타입체크와 `cargo check`를 통과시킨다.
 7. 수동으로 CLI 실행 시나리오를 검증한다.
 8. 필요하면 앱 내부 CLI 설치 command와 UI를 추가한다.

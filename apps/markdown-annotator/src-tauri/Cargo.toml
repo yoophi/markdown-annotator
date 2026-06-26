@@ -9,6 +9,14 @@ edition = "2024"
 name = "markdown_annotator_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[[bin]]
+name = "ma"
+path = "src/bin/ma.rs"
+
+[[bin]]
+name = "ma-dev"
+path = "src/bin/ma-dev.rs"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -17,6 +25,7 @@ percent-encoding = "2"
 serde = { version = "1.0", features = ["derive"] }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
+tauri-plugin-single-instance = "2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
