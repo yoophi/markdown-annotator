@@ -7,6 +7,7 @@ import {
   StickyNote,
   Trash2,
 } from "lucide-react";
+import { listen } from "@tauri-apps/api/event";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -55,6 +56,7 @@ import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import type { AnnotationAnchor, AnnotationDraft, AnnotationType } from "@/entities/annotation/model/types";
+import { readMarkdownDocument } from "@/entities/document/api/documentApi";
 import { exampleMarkdownDocuments } from "@/entities/document/model/examples";
 import type { MarkdownDocument } from "@/entities/document/model/types";
 import type { MarkdownBlock } from "@/entities/markdown-block/model/types";
@@ -63,12 +65,17 @@ import {
   type AgentPromptGoal,
 } from "@/features/export-annotations/formatAnnotationsForAgent";
 import { parseMarkdownToBlocks } from "@/features/markdown-renderer/parseMarkdownToBlocks";
-import { openMarkdownDocument } from "@/features/open-document/openMarkdownDocument";
+import {
+  getDocumentPathFromWindowQuery,
+  openMarkdownDocumentTab,
+} from "@/features/open-document/openMarkdownDocument";
 import {
   MarkdownViewer,
   type MarkdownViewerBlockNote,
   type MarkdownViewerInlineAnnotation,
 } from "@/shared/ui/MarkdownViewer";
+
+const WINDOW_HIGHLIGHT_EVENT = "markdown-annotator://window-highlight";
 
 const annotationTypes: Array<{ value: AnnotationType; label: string }> = [
   { value: "delete", label: "Delete" },
@@ -162,6 +169,10 @@ function isFullBlockAnnotation(annotation: AnnotationDraft, block: MarkdownBlock
 
 function containsNode(parent: HTMLElement, node: Node) {
   return parent === node || parent.contains(node);
+}
+
+function isTauriRuntime() {
+  return "__TAURI_INTERNALS__" in window;
 }
 
 function getSelectionAnchors(root: HTMLElement | null): AnnotationAnchor[] {
@@ -343,6 +354,18 @@ export function AnnotatorPage() {
     window.getSelection()?.removeAllRanges();
   }
 
+  function loadDocumentIntoWindow(opened: MarkdownDocument, message: string) {
+    setSelectedExampleId("");
+    setDocument(opened);
+    setPromptFilePath(opened.absolutePath);
+    setAnnotations([]);
+    resetSelectionState();
+    setEditingAnnotationId(null);
+    setNoteDialogOpen(false);
+    setComment("");
+    setStatus(message);
+  }
+
   function activeSelectionAnchors() {
     if (selectionAnchors.length > 0) {
       return selectionAnchors;
@@ -393,23 +416,16 @@ export function AnnotatorPage() {
     setStatus(`${example.fileName} 예제를 불러왔습니다.`);
   }
 
-  async function handleOpenFile() {
+  async function handleOpenFileAsTab() {
     try {
-      const opened = await openMarkdownDocument();
+      const opened = await openMarkdownDocumentTab();
       if (!opened) {
         return;
       }
 
-      setDocument(opened);
-      setPromptFilePath(opened.absolutePath);
-      setAnnotations([]);
-      resetSelectionState();
-      setEditingAnnotationId(null);
-      setNoteDialogOpen(false);
-      setComment("");
-      setStatus(`${opened.fileName} 파일을 열었습니다.`);
+      loadDocumentIntoWindow(opened, `${opened.fileName} 파일을 열었습니다.`);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "파일을 열 수 없습니다.");
+      setStatus(error instanceof Error ? error.message : "파일을 탭으로 열 수 없습니다.");
     }
   }
 
@@ -534,6 +550,52 @@ export function AnnotatorPage() {
     globalThis.document.addEventListener("mouseup", handleDocumentMouseUp);
     return () => globalThis.document.removeEventListener("mouseup", handleDocumentMouseUp);
   });
+
+  useEffect(() => {
+    const documentPath = getDocumentPathFromWindowQuery();
+    if (!documentPath || !isTauriRuntime()) {
+      return;
+    }
+
+    let cancelled = false;
+    void readMarkdownDocument(documentPath)
+      .then((opened) => {
+        if (!cancelled) {
+          loadDocumentIntoWindow(opened, `${opened.fileName} 파일을 열었습니다.`);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setStatus(error instanceof Error ? error.message : "파일을 열 수 없습니다.");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      return;
+    }
+
+    let timeoutId: number | undefined;
+    const unlistenPromise = listen(WINDOW_HIGHLIGHT_EVENT, () => {
+      setStatus("이미 열린 문서 창을 전면으로 가져왔습니다.");
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId);
+      }
+      timeoutId = window.setTimeout(() => setStatus("문서 창을 사용할 수 있습니다."), 900);
+    });
+
+    return () => {
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId);
+      }
+      void unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, []);
 
   function requestSelectionNote() {
     if (!selection || activeSelectionAnchors().length === 0) {
@@ -725,7 +787,7 @@ export function AnnotatorPage() {
               </SelectGroup>
             </SelectContent>
           </Select>
-          <Button type="button" variant="outline" onClick={handleOpenFile}>
+          <Button type="button" variant="outline" onClick={handleOpenFileAsTab}>
             <FolderOpen data-icon="inline-start" aria-hidden="true" />
             Open
           </Button>

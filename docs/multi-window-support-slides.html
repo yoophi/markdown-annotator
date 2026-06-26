@@ -1,0 +1,878 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Markdown Annotator 멀티 윈도우 지원 계획</title>
+  <style>
+    :root {
+      --background: oklch(0.97 0.005 260);
+      --foreground: oklch(0.18 0.02 260);
+      --card: oklch(1 0 0);
+      --card-foreground: oklch(0.18 0.02 260);
+      --primary: oklch(0.50 0.25 280);
+      --primary-foreground: oklch(1 0 0);
+      --secondary: oklch(0.50 0.18 180);
+      --secondary-foreground: oklch(1 0 0);
+      --muted: oklch(0.92 0.01 260);
+      --muted-foreground: oklch(0.40 0.02 260);
+      --accent: oklch(0.60 0.22 50);
+      --accent-foreground: oklch(0.18 0.02 260);
+      --destructive: oklch(0.50 0.25 25);
+      --destructive-foreground: oklch(1 0 0);
+      --success: oklch(0.45 0.20 150);
+      --success-foreground: oklch(1 0 0);
+      --warning: oklch(0.55 0.18 85);
+      --warning-foreground: oklch(0.18 0.02 260);
+      --border: oklch(0.88 0.01 260);
+      --input: oklch(0.92 0.01 260);
+      --ring: oklch(0.50 0.25 280);
+      --code-bg: oklch(0.18 0.03 260);
+      --font-sans: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, monospace;
+      --font-display: ui-serif, Georgia, "Times New Roman", serif;
+      --radius: 0.625rem;
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-snap-type: y mandatory;
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background: var(--background);
+      color: var(--foreground);
+      font-family: var(--font-sans);
+      font-size: 16px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .deck {
+      width: 100%;
+    }
+
+    .slide {
+      min-height: 100vh;
+      scroll-snap-align: start;
+      display: flex;
+      align-items: center;
+      padding: 64px 24px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .slide-inner {
+      width: min(1120px, 100%);
+      margin: 0 auto;
+    }
+
+    .eyebrow,
+    .label,
+    .kicker,
+    .slide-count,
+    .chip,
+    .code-label {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted-foreground);
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-weight: 500;
+      line-height: 1.13;
+      letter-spacing: 0;
+      color: var(--foreground);
+    }
+
+    h1 {
+      margin-top: 12px;
+      font-size: clamp(2.8rem, 8vw, 6.25rem);
+      max-width: 12ch;
+    }
+
+    h2 {
+      font-size: clamp(2.1rem, 5vw, 4.4rem);
+      max-width: 13ch;
+    }
+
+    h3 {
+      font-size: 1.25rem;
+    }
+
+    p {
+      margin: 0;
+      max-width: 68ch;
+      color: var(--muted-foreground);
+    }
+
+    .lead {
+      margin-top: 28px;
+      font-size: clamp(1.05rem, 2vw, 1.35rem);
+      max-width: 62ch;
+      color: var(--foreground);
+    }
+
+    .prompt-box {
+      margin-top: 36px;
+      max-width: 760px;
+      padding: 18px 24px;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--muted);
+    }
+
+    .prompt-box p {
+      margin-top: 6px;
+      color: var(--muted-foreground);
+    }
+
+    .summary-strip {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 16px;
+      margin-top: 42px;
+    }
+
+    .stat-card,
+    .card,
+    .phase,
+    .risk-row,
+    .decision-card {
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--card);
+    }
+
+    .stat-card {
+      min-height: 128px;
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .stat-value {
+      display: block;
+      font-family: var(--font-display);
+      font-size: 2.5rem;
+      line-height: 1;
+      color: var(--foreground);
+    }
+
+    .stat-label {
+      display: block;
+      margin-top: 10px;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted-foreground);
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: 0.9fr 1.1fr;
+      gap: 42px;
+      align-items: center;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+      margin-top: 34px;
+    }
+
+    .grid.two {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .card {
+      padding: 24px;
+      min-height: 188px;
+    }
+
+    .card p,
+    .phase p,
+    .decision-card p {
+      margin-top: 10px;
+    }
+
+    .card.primary {
+      border-color: var(--primary);
+      background: color-mix(in oklab, var(--primary) 8%, var(--card));
+    }
+
+    .card.success {
+      border-color: var(--success);
+      background: color-mix(in oklab, var(--success) 9%, var(--card));
+    }
+
+    .timeline {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 16px;
+      margin-top: 36px;
+      position: relative;
+    }
+
+    .timeline::before {
+      content: "";
+      position: absolute;
+      left: 7%;
+      right: 7%;
+      top: 30px;
+      height: 2px;
+      background: var(--border);
+      z-index: 0;
+    }
+
+    .phase {
+      position: relative;
+      z-index: 1;
+      padding: 22px;
+      min-height: 220px;
+    }
+
+    .dot {
+      width: 18px;
+      height: 18px;
+      margin-bottom: 24px;
+      border-radius: 50%;
+      background: var(--card);
+      border: 4px solid var(--primary);
+    }
+
+    .architecture {
+      margin-top: 28px;
+      padding: 18px;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--card);
+    }
+
+    svg {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+
+    .mock-window {
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      background: var(--card);
+      box-shadow: 0 18px 50px color-mix(in oklab, var(--foreground) 12%, transparent);
+    }
+
+    .chrome {
+      height: 42px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 16px;
+      border-bottom: 1.5px solid var(--border);
+      background: var(--muted);
+    }
+
+    .traffic {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      background: var(--border);
+    }
+
+    .tabbar {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      border-bottom: 1.5px solid var(--border);
+      background: color-mix(in oklab, var(--muted) 62%, var(--card));
+    }
+
+    .tab {
+      padding: 10px 14px;
+      border-right: 1px solid var(--border);
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--muted-foreground);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .tab.active {
+      background: var(--card);
+      color: var(--foreground);
+    }
+
+    .mock-body {
+      display: grid;
+      grid-template-columns: 1fr 320px;
+      gap: 0;
+      min-height: 360px;
+    }
+
+    .document-preview {
+      padding: 28px;
+      border-right: 1.5px solid var(--border);
+    }
+
+    .document-preview .line {
+      height: 12px;
+      margin-bottom: 14px;
+      border-radius: 10px;
+      background: var(--muted);
+    }
+
+    .document-preview .line.short {
+      width: 58%;
+    }
+
+    .document-preview .line.accent {
+      width: 72%;
+      background: color-mix(in oklab, var(--primary) 20%, var(--muted));
+    }
+
+    .side-panel {
+      padding: 24px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 26px;
+      padding: 0 10px;
+      border-radius: 999px;
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--primary);
+      background: color-mix(in oklab, var(--primary) 12%, transparent);
+      border: 1px solid color-mix(in oklab, var(--primary) 40%, transparent);
+    }
+
+    .badge.warning {
+      color: var(--warning-foreground);
+      background: color-mix(in oklab, var(--warning) 28%, transparent);
+      border-color: color-mix(in oklab, var(--warning) 48%, transparent);
+    }
+
+    .badge.success {
+      color: var(--success);
+      background: color-mix(in oklab, var(--success) 12%, transparent);
+      border-color: color-mix(in oklab, var(--success) 40%, transparent);
+    }
+
+    .code-panel {
+      margin-top: 28px;
+      padding: 24px;
+      border-radius: var(--radius);
+      background: var(--code-bg);
+      color: oklch(0.92 0.01 260);
+      overflow-x: auto;
+    }
+
+    .code-panel pre {
+      margin: 10px 0 0;
+      font-family: var(--font-mono);
+      font-size: 0.86rem;
+      line-height: 1.62;
+      white-space: pre-wrap;
+    }
+
+    .code-label {
+      color: oklch(0.75 0.06 280);
+    }
+
+    .kw {
+      color: oklch(0.78 0.16 280);
+    }
+
+    .fn {
+      color: oklch(0.82 0.12 180);
+    }
+
+    .str {
+      color: oklch(0.82 0.14 80);
+    }
+
+    .risk-table {
+      display: grid;
+      gap: 12px;
+      margin-top: 34px;
+    }
+
+    .risk-row {
+      display: grid;
+      grid-template-columns: 120px 1fr 1.4fr;
+      gap: 18px;
+      align-items: start;
+      padding: 18px;
+    }
+
+    .nav {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px;
+      border: 1.5px solid var(--border);
+      border-radius: 999px;
+      background: color-mix(in oklab, var(--card) 92%, transparent);
+      backdrop-filter: blur(12px);
+      box-shadow: 0 10px 32px color-mix(in oklab, var(--foreground) 12%, transparent);
+    }
+
+    .nav button {
+      width: 36px;
+      height: 36px;
+      border: 1px solid var(--border);
+      border-radius: 50%;
+      background: var(--card);
+      color: var(--foreground);
+      font-size: 18px;
+      cursor: pointer;
+    }
+
+    .slide-count {
+      min-width: 58px;
+      text-align: center;
+      color: var(--foreground);
+    }
+
+    @media (max-width: 860px) {
+      html {
+        scroll-snap-type: none;
+      }
+
+      .slide {
+        min-height: auto;
+        padding: 56px 18px;
+      }
+
+      .two-col,
+      .mock-body,
+      .risk-row {
+        grid-template-columns: 1fr;
+      }
+
+      .summary-strip,
+      .grid,
+      .grid.two,
+      .timeline {
+        grid-template-columns: 1fr;
+      }
+
+      .timeline::before,
+      .nav {
+        display: none;
+      }
+
+      .document-preview {
+        border-right: 0;
+        border-bottom: 1.5px solid var(--border);
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="deck" id="deck">
+    <section class="slide" id="slide-1">
+      <div class="slide-inner">
+        <span class="eyebrow">Implementation Plan · Markdown Annotator</span>
+        <h1>멀티 윈도우 지원 계획</h1>
+        <p class="lead">Tauri native window를 중심에 두고, 단일 창에도 항상 탭을 표시하며, macOS native tab 병합과 분리까지 확장 가능한 구조로 정리한다.</p>
+        <div class="prompt-box">
+          <span class="label">Goal</span>
+          <p>작업 목표는 CLI가 아니라 앱 내부의 멀티 윈도우 기반이다. `ma &lt;filename&gt;`은 후속 작업으로 분리한다.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-2">
+      <div class="slide-inner">
+        <span class="eyebrow">Scope Snapshot</span>
+        <h2>이번 작업은 네 가지 경계를 고정한다</h2>
+        <div class="summary-strip">
+          <div class="stat-card">
+            <span class="stat-value">1</span>
+            <span class="stat-label">문서당 native window</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-value">NS</span>
+            <span class="stat-label">항상 보이는 native tab</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-value">2</span>
+            <span class="stat-label">창 경로: 새 창 / 포커스</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-value">macOS</span>
+            <span class="stat-label">native tab 확장</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-3">
+      <div class="slide-inner">
+        <div class="two-col">
+          <div>
+            <span class="eyebrow">Reference Pattern</span>
+            <h2>참고 구현의 핵심은 URL query 기반 native window</h2>
+            <p class="lead">`tauri-multi-window-text-viewer`는 정적 window를 만들지 않고, Rust가 `WebviewWindowBuilder`로 필요한 창을 직접 생성한다.</p>
+          </div>
+          <div class="grid" style="grid-template-columns:1fr;">
+            <div class="card primary">
+              <span class="badge">Adopt</span>
+              <h3 style="margin-top:14px;">결정적 label</h3>
+              <p>canonical path를 hash해 같은 파일이 항상 같은 window label을 갖게 한다.</p>
+            </div>
+            <div class="card success">
+              <span class="badge success">Adopt</span>
+              <h3 style="margin-top:14px;">초기 문서 전달</h3>
+              <p>`index.html?path=...`로 새 창이 자신이 읽을 문서를 직접 파악한다.</p>
+            </div>
+            <div class="card">
+              <span class="badge warning">Constrain</span>
+              <h3 style="margin-top:14px;">하이브리드 탭</h3>
+              <p>단일 창에서도 native tab bar를 표시하고, OS 병합/분리를 그대로 사용한다.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-4">
+      <div class="slide-inner">
+        <span class="eyebrow">Architecture Flow</span>
+        <h2>파일 열기는 중복 확인 후 새 창 또는 기존 창 포커스로 갈라진다</h2>
+        <div class="architecture">
+          <svg viewBox="0 0 1040 430" role="img" aria-label="멀티 윈도우 파일 열기 흐름">
+            <defs>
+              <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z" fill="var(--muted-foreground)"></path>
+              </marker>
+              <marker id="arrow-primary" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z" fill="var(--primary)"></path>
+              </marker>
+              <marker id="arrow-success" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z" fill="var(--success)"></path>
+              </marker>
+            </defs>
+            <style>
+              .box { fill: var(--card); stroke: var(--border); stroke-width: 1.5; }
+              .box-new { fill: color-mix(in oklab, var(--primary) 8%, transparent); stroke: var(--primary); stroke-width: 1.5; }
+              .box-ok { fill: color-mix(in oklab, var(--success) 10%, transparent); stroke: var(--success); stroke-width: 1.5; }
+              .label-svg { font-family: var(--font-sans); font-size: 15px; font-weight: 700; fill: var(--foreground); }
+              .sub-svg { font-family: var(--font-mono); font-size: 11px; fill: var(--muted-foreground); }
+              .edge { stroke: var(--muted-foreground); stroke-width: 1.7; marker-end: url(#arrow); }
+              .edge-primary { stroke: var(--primary); stroke-width: 1.7; marker-end: url(#arrow-primary); }
+              .edge-ok { stroke: var(--success); stroke-width: 1.7; marker-end: url(#arrow-success); }
+            </style>
+            <rect x="24" y="170" width="150" height="70" rx="10" class="box"></rect>
+            <text x="99" y="199" text-anchor="middle" class="label-svg">파일 선택</text>
+            <text x="99" y="219" text-anchor="middle" class="sub-svg">dialog path</text>
+
+            <line x1="174" y1="205" x2="250" y2="205" class="edge"></line>
+
+            <rect x="250" y="160" width="188" height="90" rx="10" class="box-new"></rect>
+            <text x="344" y="194" text-anchor="middle" class="label-svg">Tauri command</text>
+            <text x="344" y="216" text-anchor="middle" class="sub-svg">request_open_document_window</text>
+
+            <line x1="438" y1="205" x2="512" y2="205" class="edge-primary"></line>
+
+            <path d="M590,145 L675,205 L590,265 L505,205 Z" class="box"></path>
+            <text x="590" y="199" text-anchor="middle" class="label-svg">label 존재?</text>
+            <text x="590" y="220" text-anchor="middle" class="sub-svg">canonical path hash</text>
+
+            <path d="M675,205 C735,205 735,98 790,98" fill="none" class="edge-ok"></path>
+            <rect x="790" y="58" width="190" height="80" rx="10" class="box-ok"></rect>
+            <text x="885" y="91" text-anchor="middle" class="label-svg">기존 창 포커스</text>
+            <text x="885" y="113" text-anchor="middle" class="sub-svg">show / unminimize / focus</text>
+
+            <path d="M675,205 C735,205 735,312 790,312" fill="none" class="edge-primary"></path>
+            <rect x="790" y="270" width="190" height="84" rx="10" class="box-new"></rect>
+            <text x="885" y="303" text-anchor="middle" class="label-svg">새 native window</text>
+            <text x="885" y="326" text-anchor="middle" class="sub-svg">index.html?path=...</text>
+
+            <line x1="885" y1="270" x2="885" y2="156" stroke="var(--success)" stroke-width="1.5" stroke-dasharray="6 5" marker-end="url(#arrow-success)"></line>
+            <text x="916" y="214" class="sub-svg" fill="var(--success)">macOS tab group</text>
+          </svg>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-5">
+      <div class="slide-inner">
+        <div class="two-col">
+          <div>
+            <span class="eyebrow">Native Tabs</span>
+        <h2>단일 창에서도 native tab bar를 유지한다</h2>
+            <p class="lead">모든 window에 같은 `tabbing_identifier`를 부여하고, 생성/포커스 시 `toggleTabBar` 보정으로 macOS native tab bar 표시를 요청한다.</p>
+          </div>
+          <div class="mock-window">
+            <div class="chrome">
+              <span class="traffic"></span><span class="traffic"></span><span class="traffic"></span>
+              <span class="label" style="margin-left:10px;">Markdown Annotator</span>
+            </div>
+            <div class="tabbar">
+              <div class="tab active">proposal.md</div>
+              <div class="tab">review.md</div>
+              <div class="tab">notes.md</div>
+            </div>
+            <div class="mock-body">
+              <div class="document-preview">
+                <div class="line short"></div>
+                <div class="line"></div>
+                <div class="line accent"></div>
+                <div class="line"></div>
+                <div class="line short"></div>
+                <div class="line"></div>
+                <div class="line accent"></div>
+                <div class="line short"></div>
+              </div>
+              <aside class="side-panel">
+                <span class="badge success">Native</span>
+                <h3 style="margin-top:16px;">드래그 가능한 tab bar</h3>
+                <p>단일 window도 native tab bar를 표시해 다른 window로 드래그 병합할 수 있게 한다.</p>
+              </aside>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-6">
+      <div class="slide-inner">
+        <span class="eyebrow">Implementation Timeline</span>
+        <h2>구현은 native window 경로를 먼저 고정한다</h2>
+        <div class="timeline">
+          <div class="phase">
+            <div class="dot"></div>
+            <span class="kicker">Phase 01</span>
+            <h3>정적 window 제거</h3>
+            <p>`app.windows`를 비우고 `RunEvent::Ready`에서 main 안내/예제 창을 생성한다.</p>
+          </div>
+          <div class="phase">
+            <div class="dot"></div>
+            <span class="kicker">Phase 02</span>
+            <h3>결정적 label</h3>
+            <p>Markdown 경로를 canonicalize하고 hash label로 중복 창을 판별한다.</p>
+          </div>
+          <div class="phase">
+            <div class="dot"></div>
+            <span class="kicker">Phase 03</span>
+            <h3>query 기반 로딩</h3>
+            <p>새 창 URL에 `path`를 넣고 프론트가 mount 시 문서를 읽는다.</p>
+          </div>
+          <div class="phase">
+            <div class="dot"></div>
+            <span class="kicker">Phase 04</span>
+            <h3>하이브리드 탭</h3>
+            <p>`tabbing_identifier`, `addTabbedWindow_ordered`, `toggleTabBar` 보정을 붙인다.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-7">
+      <div class="slide-inner">
+        <span class="eyebrow">Key Interfaces</span>
+        <h2>핵심 코드는 창 생성 경계에 모인다</h2>
+        <div class="code-panel">
+          <span class="code-label">src-tauri/src/inbound/window_commands.rs</span>
+          <pre><code><span class="kw">#[tauri::command]</span>
+<span class="kw">fn</span> <span class="fn">request_open_document_window</span>(
+    app: AppHandle,
+    path: String,
+) -&gt; Result&lt;(), String&gt; {
+    <span class="kw">let</span> canonical = validate_markdown_path(&path)?;
+    <span class="kw">let</span> label = label_for_document(&canonical);
+
+    <span class="kw">if</span> focus_if_open(&app, &label) {
+        emit_window_highlight(&app, &label);
+        <span class="kw">return</span> Ok(());
+    }
+
+    create_document_window(&app, &label, &canonical)
+}</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-8">
+      <div class="slide-inner">
+        <span class="eyebrow">Frontend Contract</span>
+        <h2>프론트는 window query를 읽어 자기 문서를 로드한다</h2>
+        <div class="grid two">
+          <div class="card primary">
+            <span class="badge">Document window</span>
+            <h3 style="margin-top:16px;">`?path=`가 있는 창</h3>
+            <p>mount 시 `readMarkdownDocument(path)`를 호출하고 annotation, selection, dialog 상태를 초기화한다.</p>
+          </div>
+          <div class="card">
+            <span class="badge warning">Welcome window</span>
+            <h3 style="margin-top:16px;">`?path=`가 없는 창</h3>
+            <p>기존 예제 문서 또는 시작 화면을 보여준다. 파일 열기는 백엔드에 새 native window 생성을 요청한다.</p>
+          </div>
+        </div>
+        <div class="code-panel">
+          <span class="code-label">features/open-document/windowQuery.ts</span>
+          <pre><code><span class="kw">export function</span> <span class="fn">getDocumentPathFromWindowQuery</span>() {
+  <span class="kw">const</span> params = <span class="kw">new</span> URLSearchParams(window.location.search);
+  <span class="kw">return</span> params.get(<span class="str">"path"</span>);
+}</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-9">
+      <div class="slide-inner">
+        <span class="eyebrow">Decisions</span>
+        <h2>전략은 native tab bar 하나로 통일한다</h2>
+        <div class="grid">
+          <div class="decision-card" style="padding:24px;">
+            <span class="badge success">Required</span>
+            <h3 style="margin-top:16px;">단일 창 tab bar</h3>
+            <p>window 생성과 포커스 시 native tab bar 표시를 보정한다.</p>
+          </div>
+          <div class="decision-card" style="padding:24px;">
+            <span class="badge success">Required</span>
+            <h3 style="margin-top:16px;">native tab group</h3>
+            <p>모든 문서 창에 `tabbing_identifier("markdown-annotator")`를 적용한다.</p>
+          </div>
+          <div class="decision-card" style="padding:24px;">
+            <span class="badge warning">Decide</span>
+            <h3 style="margin-top:16px;">`Cmd+T` 새 탭</h3>
+            <p>파일 선택 후 현재 native tab group에 새 문서 창을 붙이는 방향을 우선한다.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-10">
+      <div class="slide-inner">
+        <span class="eyebrow">Risks & Mitigations</span>
+        <h2>리스크는 초기 로딩과 macOS 전용 동작에 집중된다</h2>
+        <div class="risk-table">
+          <div class="risk-row">
+            <span class="badge warning">MED</span>
+            <div>
+              <h3>이벤트 race condition</h3>
+              <p>새 창 생성 직후 이벤트를 emit하면 프론트 구독 전에 놓칠 수 있다.</p>
+            </div>
+            <p>초기 문서는 이벤트가 아니라 `index.html?path=...` query로 전달한다.</p>
+          </div>
+          <div class="risk-row">
+            <span class="badge warning">MED</span>
+            <div>
+              <h3>경로 비교 실패</h3>
+              <p>상대 경로, symlink, 대소문자 차이로 같은 파일 판정이 흔들릴 수 있다.</p>
+            </div>
+            <p>모든 중복 판정은 canonical path에서 만든 deterministic label로 처리한다.</p>
+          </div>
+          <div class="risk-row">
+            <span class="badge">LOW</span>
+            <div>
+              <h3>단일 native tab bar 한계</h3>
+              <p>Tauri/wry 환경에 따라 `toggleTabBar`가 기대처럼 동작하지 않을 수 있다.</p>
+            </div>
+            <p>실패 시 hidden helper tab 또는 별도 AppKit 보조 전략을 검토한다.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-11">
+      <div class="slide-inner">
+        <span class="eyebrow">Verification</span>
+        <h2>수동 검증은 창 중복과 탭 이동을 직접 확인한다</h2>
+        <div class="grid two">
+          <div class="card success">
+            <span class="badge success">Build checks</span>
+            <h3 style="margin-top:16px;">자동 검증</h3>
+            <p>`cargo check`와 `pnpm --filter @yoophi/markdown-annotator check-types`를 통과시킨다.</p>
+          </div>
+          <div class="card primary">
+            <span class="badge">Manual checks</span>
+            <h3 style="margin-top:16px;">사용자 흐름</h3>
+            <p>파일 A 재열기 포커스, native tab 표시, 탭 분리/병합을 확인한다.</p>
+          </div>
+        </div>
+        <p class="lead">멀티 윈도우 기반이 안정화되면 후속으로 `ma &lt;filename&gt;` CLI 진입점을 붙인다.</p>
+      </div>
+    </section>
+  </main>
+
+  <nav class="nav" aria-label="슬라이드 이동">
+    <button type="button" id="prev" aria-label="이전 슬라이드">‹</button>
+    <span class="slide-count" id="count">1 / 11</span>
+    <button type="button" id="next" aria-label="다음 슬라이드">›</button>
+  </nav>
+
+  <script>
+    const slides = Array.from(document.querySelectorAll(".slide"));
+    const count = document.getElementById("count");
+    let current = 0;
+
+    function updateCount() {
+      const mid = window.scrollY + window.innerHeight / 2;
+      current = slides.findIndex((slide) => {
+        const top = slide.offsetTop;
+        const bottom = top + slide.offsetHeight;
+        return mid >= top && mid < bottom;
+      });
+      if (current < 0) current = 0;
+      count.textContent = `${current + 1} / ${slides.length}`;
+    }
+
+    function go(delta) {
+      const next = Math.max(0, Math.min(slides.length - 1, current + delta));
+      slides[next].scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    document.getElementById("prev").addEventListener("click", () => go(-1));
+    document.getElementById("next").addEventListener("click", () => go(1));
+    window.addEventListener("scroll", updateCount, { passive: true });
+    window.addEventListener("resize", updateCount);
+    window.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowRight" || event.key === "PageDown" || event.key === " ") {
+        event.preventDefault();
+        go(1);
+      }
+      if (event.key === "ArrowLeft" || event.key === "PageUp") {
+        event.preventDefault();
+        go(-1);
+      }
+      if (event.key === "Home") {
+        event.preventDefault();
+        slides[0].scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+      if (event.key === "End") {
+        event.preventDefault();
+        slides[slides.length - 1].scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    });
+    updateCount();
+  </script>
+</body>
+</html>
