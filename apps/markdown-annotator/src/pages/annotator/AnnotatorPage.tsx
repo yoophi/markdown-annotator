@@ -5,6 +5,7 @@ import {
   FolderOpen,
   MessageSquarePlus,
   StickyNote,
+  Terminal,
   Trash2,
 } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
@@ -56,7 +57,11 @@ import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import type { AnnotationAnchor, AnnotationDraft, AnnotationType } from "@/entities/annotation/model/types";
-import { readMarkdownDocument } from "@/entities/document/api/documentApi";
+import {
+  checkCliInstalled,
+  installCli,
+  readMarkdownDocument,
+} from "@/entities/document/api/documentApi";
 import { exampleMarkdownDocuments } from "@/entities/document/model/examples";
 import type { MarkdownDocument } from "@/entities/document/model/types";
 import type { MarkdownBlock } from "@/entities/markdown-block/model/types";
@@ -250,6 +255,8 @@ export function AnnotatorPage() {
   const [annotations, setAnnotations] = useState<AnnotationDraft[]>([]);
   const [editingAnnotationId, setEditingAnnotationId] = useState<string | null>(null);
   const [noteDialogOpen, setNoteDialogOpen] = useState(false);
+  const [isCliInstalled, setCliInstalled] = useState(false);
+  const [isCliInstalling, setCliInstalling] = useState(false);
   const [selectionHighlightRects, setSelectionHighlightRects] = useState<SelectionHighlightRect[]>([]);
   const [selectionToolbarPosition, setSelectionToolbarPosition] = useState<SelectionToolbarPosition | null>(null);
   const [status, setStatus] = useState("예제 문서를 선택하거나 로컬 Markdown 파일을 열 수 있습니다.");
@@ -429,6 +436,19 @@ export function AnnotatorPage() {
     }
   }
 
+  async function handleInstallCli() {
+    setCliInstalling(true);
+    try {
+      const status = await installCli();
+      setCliInstalled(status.installed);
+      setStatus(`CLI를 설치했습니다: ${status.path}`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "CLI를 설치할 수 없습니다.");
+    } finally {
+      setCliInstalling(false);
+    }
+  }
+
   function blockAnchor(block: MarkdownBlock): AnnotationAnchor {
     return {
       blockId: block.id,
@@ -595,6 +615,16 @@ export function AnnotatorPage() {
       }
       void unlistenPromise.then((unlisten) => unlisten());
     };
+  }, []);
+
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      return;
+    }
+
+    void checkCliInstalled()
+      .then((status) => setCliInstalled(status.installed))
+      .catch(() => setCliInstalled(false));
   }, []);
 
   function requestSelectionNote() {
@@ -791,6 +821,17 @@ export function AnnotatorPage() {
             <FolderOpen data-icon="inline-start" aria-hidden="true" />
             Open
           </Button>
+          {isTauriRuntime() ? (
+            <Button
+              type="button"
+              variant={isCliInstalled ? "default" : "outline"}
+              onClick={handleInstallCli}
+              disabled={isCliInstalling}
+            >
+              <Terminal data-icon="inline-start" aria-hidden="true" />
+              {isCliInstalling ? "Installing" : isCliInstalled ? "CLI installed" : "Install CLI"}
+            </Button>
+          ) : null}
           <Button type="button" onClick={copyExport}>
             <ClipboardCopy data-icon="inline-start" aria-hidden="true" />
             Copy prompt

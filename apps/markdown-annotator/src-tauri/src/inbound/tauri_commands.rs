@@ -3,14 +3,24 @@ use crate::{
     infrastructure::fs_document_reader::FsDocumentReader,
 };
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
+use serde::Serialize;
 use std::{
     collections::hash_map::DefaultHasher,
+    env, fs,
     hash::{Hash, Hasher},
     path::{Path, PathBuf},
 };
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 const WINDOW_HIGHLIGHT_EVENT: &str = "markdown-annotator://window-highlight";
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CliInstallStatus {
+    installed: bool,
+    path: String,
+    target: String,
+}
 
 #[tauri::command]
 pub fn read_markdown_file(path: String) -> Result<MarkdownDocument, String> {
@@ -19,15 +29,56 @@ pub fn read_markdown_file(path: String) -> Result<MarkdownDocument, String> {
 }
 
 #[tauri::command]
-pub fn request_open_document_window(app: tauri::AppHandle, path: String) -> Result<(), String> {
-    let document_path = resolve_markdown_file(&path)?;
-    let label = label_for_document(&document_path);
+pub fn install_cli() -> Result<CliInstallStatus, String> {
+    let current_exe =
+        env::current_exe().map_err(|error| format!("failed to locate app executable: {error}"))?;
+    let bin_dir = user_bin_dir()?;
+    fs::create_dir_all(&bin_dir).map_err(|error| {
+        format!(
+            "failed to create CLI install directory {}: {error}",
+            bin_dir.display()
+        )
+    })?;
 
-    if focus_if_open(&app, &label) {
-        return Ok(());
+    let cli_path = bin_dir.join("ma");
+    if cli_path.is_dir() {
+        return Err(format!(
+            "cannot install ma because path is a directory: {}",
+            cli_path.display()
+        ));
     }
 
-    create_document_window(&app, &label, &document_path).map(|_| ())
+    let script = cli_launcher_script(&current_exe);
+    fs::write(&cli_path, script)
+        .map_err(|error| format!("failed to write {}: {error}", cli_path.display()))?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&cli_path, fs::Permissions::from_mode(0o755)).map_err(|error| {
+            format!("failed to mark {} executable: {error}", cli_path.display())
+        })?;
+    }
+
+    Ok(cli_install_status(true, &cli_path, &current_exe))
+}
+
+#[tauri::command]
+pub fn check_cli_installed() -> Result<CliInstallStatus, String> {
+    let current_exe =
+        env::current_exe().map_err(|error| format!("failed to locate app executable: {error}"))?;
+    let cli_path = user_bin_dir()?.join("ma");
+    let expected = cli_launcher_script(&current_exe);
+    let installed = fs::read_to_string(&cli_path)
+        .map(|content| content == expected)
+        .unwrap_or(false);
+
+    Ok(cli_install_status(installed, &cli_path, &current_exe))
+}
+
+#[tauri::command]
+pub fn request_open_document_window(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    open_document_window_path(&app, &path)
 }
 
 #[tauri::command]
@@ -67,6 +118,50 @@ pub fn open_welcome_window(app: &tauri::AppHandle) {
         Ok(window) => show_native_tab_bar(&window),
         Err(error) => eprintln!("failed to create main window: {error}"),
     }
+}
+
+pub fn open_document_window_path(app: &tauri::AppHandle, path: &str) -> Result<(), String> {
+    let document_path = resolve_markdown_file(path)?;
+    let label = label_for_document(&document_path);
+
+    if focus_if_open(app, &label) {
+        return Ok(());
+    }
+
+    create_document_window(app, &label, &document_path).map(|_| ())
+}
+
+pub fn open_document_from_cli_args(
+    app: &tauri::AppHandle,
+    argv: &[String],
+    cwd: &Path,
+) -> Result<bool, String> {
+    let Some(path) = cli_path_arg(argv) else {
+        return Ok(false);
+    };
+
+    let absolute_path = resolve_cli_path(path, cwd)?;
+    open_document_window_path(app, &absolute_path.to_string_lossy())?;
+    Ok(true)
+}
+
+pub fn focus_any_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.webview_windows().into_values().next() {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+        show_native_tab_bar(&window);
+    }
+}
+
+pub fn initial_cli_args() -> Result<Option<(Vec<String>, PathBuf)>, String> {
+    let argv = env::args().collect::<Vec<_>>();
+    if cli_path_arg(&argv).is_none() {
+        return Ok(None);
+    }
+
+    let cwd = env::current_dir().map_err(|error| format!("failed to read cwd: {error}"))?;
+    Ok(Some((argv, cwd)))
 }
 
 fn create_document_window(
@@ -191,6 +286,56 @@ fn resolve_markdown_file(raw_path: &str) -> Result<PathBuf, String> {
     }
 
     Ok(canonical)
+}
+
+fn cli_path_arg(argv: &[String]) -> Option<&str> {
+    argv.get(1)
+        .map(String::as_str)
+        .filter(|path| !path.is_empty())
+}
+
+fn resolve_cli_path(raw_path: &str, cwd: &Path) -> Result<PathBuf, String> {
+    let path = PathBuf::from(raw_path);
+    let candidate = if path.is_absolute() {
+        path
+    } else {
+        cwd.join(path)
+    };
+
+    Ok(candidate)
+}
+
+fn cli_install_status(installed: bool, cli_path: &Path, app_exe: &Path) -> CliInstallStatus {
+    CliInstallStatus {
+        installed,
+        path: cli_path.to_string_lossy().to_string(),
+        target: app_exe.to_string_lossy().to_string(),
+    }
+}
+
+fn user_bin_dir() -> Result<PathBuf, String> {
+    let home = env::var_os("HOME")
+        .map(PathBuf::from)
+        .ok_or_else(|| "failed to locate HOME directory".to_string())?;
+    Ok(home.join(".local").join("bin"))
+}
+
+fn cli_launcher_script(app_exe: &Path) -> String {
+    format!(
+        r#"#!/bin/sh
+APP_EXE={}
+if [ ! -x "$APP_EXE" ]; then
+  echo "ma: Markdown Annotator executable is not available: $APP_EXE" >&2
+  exit 1
+fi
+nohup "$APP_EXE" "$@" >/dev/null 2>&1 &
+"#,
+        shell_quote(&app_exe.to_string_lossy())
+    )
+}
+
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
 }
 
 fn is_markdown_file(path: &Path) -> bool {

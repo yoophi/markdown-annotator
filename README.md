@@ -40,6 +40,50 @@ flowchart LR
 4. `Prompt` 탭에서 목표와 사용자 지침, 파일 경로를 확인합니다.
 5. 생성된 agent prompt를 복사해 Codex, Claude Code, OpenCode 같은 agent session에 전달합니다.
 
+## CLI 사용법
+
+Markdown Annotator는 Markdown 파일을 터미널에서 바로 여는 CLI를 제공합니다.
+
+릴리즈/설치 환경에서는 `ma`를 사용합니다.
+
+```bash
+ma README.md
+ma docs/annotation-architecture.md
+```
+
+`ma`는 앱 화면의 `Install CLI` 버튼이 설치하는 편의용 wrapper script입니다. 현재 실행 중인 앱 실행 파일에 Markdown 파일 경로를 전달합니다. 같은 파일이 이미 열려 있으면 새 창을 만들지 않고 기존 문서 창을 포커스합니다.
+
+빌드 산출물로는 설명적인 이름의 `markdown-annotator-cli` 바이너리를 제공합니다.
+
+```bash
+cd apps/markdown-annotator/src-tauri
+cargo build --bin markdown-annotator-cli
+```
+
+`markdown-annotator-cli`를 직접 실행해야 하는 경우에는 앱 실행 파일 탐색 순서에 따라 대상 앱을 찾습니다.
+
+1. `MARKDOWN_ANNOTATOR_APP_PATH`
+2. macOS 앱 번들의 sibling 실행 파일
+3. `/Applications/Markdown Annotator.app/Contents/MacOS/markdown-annotator`
+
+앱 화면의 `Install CLI` 버튼을 누르면 현재 실행 중인 앱을 가리키는 wrapper script를 `~/.local/bin/ma`에 설치합니다. 설치 후 `~/.local/bin`이 shell `PATH`에 포함되어 있어야 터미널에서 `ma`를 바로 실행할 수 있습니다.
+
+개발 환경에서는 `ma-dev`를 사용합니다.
+
+```bash
+cd apps/markdown-annotator/src-tauri
+cargo build --bin ma-dev
+./target/debug/ma-dev ../../../README.md
+```
+
+`ma-dev`는 개발 산출물인 `target/debug/markdown-annotator`를 사용합니다. 실행 시 앱 바이너리를 먼저 빌드하고, `tauri.conf.json`의 `build.devUrl`에 지정된 Vite dev server가 실행 중이 아니면 `pnpm run dev`를 자동으로 시작합니다.
+
+디버깅이 필요하면 `MA_VERBOSE=1`을 붙여 런처 로그를 확인할 수 있습니다.
+
+```bash
+MA_VERBOSE=1 ./target/debug/ma-dev ../../../README.md
+```
+
 ## Agent Prompt
 
 Prompt export는 agent가 실제 문서를 수정할 수 있도록 다음 정보를 포함합니다.
@@ -130,6 +174,7 @@ pnpm check-types
 pnpm build
 pnpm build-storybook
 cd apps/markdown-annotator/src-tauri && cargo check
+cd apps/markdown-annotator/src-tauri && cargo check --bin markdown-annotator-cli --bin ma-dev
 ```
 
 ## 앱 구조
