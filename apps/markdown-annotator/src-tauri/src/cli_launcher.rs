@@ -1,15 +1,27 @@
 use std::{
-    env,
+    env, fs,
     net::TcpStream,
     path::{Path, PathBuf},
     process::{Command, Stdio},
     thread,
     time::{Duration, Instant},
 };
+use url::Url;
 
 pub enum CliMode {
     Dev,
     Release,
+}
+
+struct DevPaths {
+    app_dir: PathBuf,
+    src_tauri_dir: PathBuf,
+}
+
+struct DevServerEndpoint {
+    display_url: String,
+    hosts: Vec<String>,
+    port: u16,
 }
 
 pub fn run(command_name: &str, mode: CliMode) -> Result<(), String> {
@@ -186,23 +198,33 @@ fn launch_app(_command_name: &str, app: &Path, target: &Path) -> Result<(), Stri
 }
 
 fn ensure_dev_server(command_name: &str) -> Result<(), String> {
-    if dev_server_is_running() {
-        debug_log(command_name, "Vite dev server is already running");
+    let paths = infer_dev_paths_from_exe()?;
+    let endpoint = read_dev_server_endpoint(&paths.src_tauri_dir)?;
+
+    if dev_server_is_running(&endpoint) {
+        debug_log(
+            command_name,
+            format!(
+                "Vite dev server is already running at {}",
+                endpoint.display_url
+            ),
+        );
         return Ok(());
     }
 
-    let Some(app_dir) = local_app_dir_from_dev_exe()? else {
-        return Err("failed to infer app package directory from ma-dev executable".to_string());
-    };
-
     debug_log(
         command_name,
-        format!("starting Vite dev server in {}", app_dir.display()),
+        format!(
+            "starting Vite dev server for {} in {}",
+            endpoint.display_url,
+            paths.app_dir.display()
+        ),
     );
     Command::new("pnpm")
         .arg("run")
         .arg("dev")
-        .current_dir(&app_dir)
+        .env("VITE_DEV_SERVER_PORT", endpoint.port.to_string())
+        .current_dir(&paths.app_dir)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -210,14 +232,14 @@ fn ensure_dev_server(command_name: &str) -> Result<(), String> {
         .map_err(|error| {
             format!(
                 "failed to start Vite dev server in {}: {error}",
-                app_dir.display()
+                paths.app_dir.display()
             )
         })?;
 
-    wait_for_dev_server()
+    wait_for_dev_server(&endpoint)
 }
 
-fn local_app_dir_from_dev_exe() -> Result<Option<PathBuf>, String> {
+fn infer_dev_paths_from_exe() -> Result<DevPaths, String> {
     let current_exe = env::current_exe()
         .map_err(|error| format!("failed to locate ma-dev executable: {error}"))?;
 
@@ -225,10 +247,20 @@ fn local_app_dir_from_dev_exe() -> Result<Option<PathBuf>, String> {
         .ancestors()
         .find(|candidate| candidate.join("tauri.conf.json").is_file())
     else {
-        return Ok(None);
+        return Err("failed to infer src-tauri directory from ma-dev executable".to_string());
     };
 
-    Ok(src_tauri_dir.parent().map(Path::to_path_buf))
+    let Some(app_dir) = src_tauri_dir.parent().map(Path::to_path_buf) else {
+        return Err(format!(
+            "failed to infer app package directory from {}",
+            src_tauri_dir.display()
+        ));
+    };
+
+    Ok(DevPaths {
+        app_dir,
+        src_tauri_dir: src_tauri_dir.to_path_buf(),
+    })
 }
 
 fn ensure_dev_app_built(ma_dev_exe: &Path) -> Result<(), String> {
@@ -265,24 +297,75 @@ fn ensure_dev_app_built(ma_dev_exe: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn wait_for_dev_server() -> Result<(), String> {
+fn wait_for_dev_server(endpoint: &DevServerEndpoint) -> Result<(), String> {
     let deadline = Instant::now() + Duration::from_secs(15);
 
     while Instant::now() < deadline {
-        if dev_server_is_running() {
+        if dev_server_is_running(endpoint) {
             return Ok(());
         }
 
         thread::sleep(Duration::from_millis(150));
     }
 
-    Err("Vite dev server did not start on localhost:1420 within 15 seconds".to_string())
+    Err(format!(
+        "Vite dev server did not start at {} within 15 seconds",
+        endpoint.display_url
+    ))
 }
 
-fn dev_server_is_running() -> bool {
-    TcpStream::connect(("127.0.0.1", 1420)).is_ok()
-        || TcpStream::connect(("::1", 1420)).is_ok()
-        || TcpStream::connect("localhost:1420").is_ok()
+fn dev_server_is_running(endpoint: &DevServerEndpoint) -> bool {
+    endpoint
+        .hosts
+        .iter()
+        .any(|host| TcpStream::connect((host.as_str(), endpoint.port)).is_ok())
+}
+
+fn read_dev_server_endpoint(src_tauri_dir: &Path) -> Result<DevServerEndpoint, String> {
+    let config_path = src_tauri_dir.join("tauri.conf.json");
+    let config_text = fs::read_to_string(&config_path)
+        .map_err(|error| format!("failed to read {}: {error}", config_path.display()))?;
+    let config: serde_json::Value = serde_json::from_str(&config_text)
+        .map_err(|error| format!("failed to parse {}: {error}", config_path.display()))?;
+    let dev_url = config
+        .pointer("/build/devUrl")
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| format!("missing build.devUrl in {}", config_path.display()))?;
+    let url = Url::parse(dev_url)
+        .map_err(|error| format!("failed to parse build.devUrl {dev_url}: {error}"))?;
+
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err(format!(
+            "unsupported build.devUrl scheme for ma-dev: {}",
+            url.scheme()
+        ));
+    }
+
+    let host = url
+        .host_str()
+        .ok_or_else(|| format!("missing host in build.devUrl {dev_url}"))?;
+    let port = url
+        .port_or_known_default()
+        .ok_or_else(|| format!("missing port in build.devUrl {dev_url}"))?;
+
+    Ok(DevServerEndpoint {
+        display_url: dev_url.to_string(),
+        hosts: loopback_hosts_for(host),
+        port,
+    })
+}
+
+fn loopback_hosts_for(host: &str) -> Vec<String> {
+    match host {
+        "localhost" => vec![
+            "127.0.0.1".to_string(),
+            "::1".to_string(),
+            "localhost".to_string(),
+        ],
+        "0.0.0.0" => vec!["127.0.0.1".to_string(), "localhost".to_string()],
+        "::" => vec!["::1".to_string(), "localhost".to_string()],
+        _ => vec![host.to_string()],
+    }
 }
 
 fn debug_log(command_name: &str, message: impl AsRef<str>) {

@@ -78,7 +78,7 @@ flowchart TD
 1. `MARKDOWN_ANNOTATOR_APP_PATH` 환경 변수
 2. `ma-dev`와 같은 `target/debug` 디렉터리의 `markdown-annotator`
 
-개발용 `ma-dev`는 `localhost:1420`이 열려 있지 않으면 앱 package directory에서 `pnpm run dev`를 먼저 시작한 뒤 debug 앱 실행 파일을 띄운다.
+개발용 `ma-dev`는 `tauri.conf.json`의 `build.devUrl`을 읽고, 해당 dev server가 열려 있지 않으면 앱 package directory에서 `pnpm run dev`를 먼저 시작한 뒤 debug 앱 실행 파일을 띄운다. Vite에는 `build.devUrl`의 port를 `VITE_DEV_SERVER_PORT`로 넘겨 Tauri 설정과 dev server port를 맞춘다.
 
 또한 `target/debug/markdown-annotator`가 없거나 `ma-dev`보다 오래된 경우에는 `cargo build --bin markdown-annotator`를 먼저 실행한다. 이렇게 해야 `ma-dev`만 새로 빌드되고 실제 앱 바이너리는 오래된 상태로 남아 문서 인자 처리가 누락되는 문제를 피할 수 있다.
 

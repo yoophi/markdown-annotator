@@ -67,7 +67,7 @@ cargo build --bin ma-dev
 ./target/debug/ma-dev ../../../README.md
 ```
 
-`ma-dev`는 개발 산출물인 `target/debug/markdown-annotator`를 사용합니다. 실행 시 앱 바이너리를 먼저 빌드하고, Vite dev server가 `localhost:1420`에서 실행 중이 아니면 `pnpm run dev`를 자동으로 시작합니다.
+`ma-dev`는 개발 산출물인 `target/debug/markdown-annotator`를 사용합니다. 실행 시 앱 바이너리를 먼저 빌드하고, `tauri.conf.json`의 `build.devUrl`에 지정된 Vite dev server가 실행 중이 아니면 `pnpm run dev`를 자동으로 시작합니다.
 
 디버깅이 필요하면 `MA_VERBOSE=1`을 붙여 런처 로그를 확인할 수 있습니다.
 
