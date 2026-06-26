@@ -37,17 +37,17 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(move |app, event| {
-            if let RunEvent::Ready = event {
-                if app.webview_windows().is_empty() {
-                    match initial_cli_args.as_ref() {
-                        Some((argv, cwd)) => {
-                            if let Err(error) = open_document_from_cli_args(app, argv, cwd) {
-                                eprintln!("failed to open initial CLI document: {error}");
-                                open_welcome_window(app);
-                            }
+            if let RunEvent::Ready = event
+                && app.webview_windows().is_empty()
+            {
+                match initial_cli_args.as_ref() {
+                    Some((argv, cwd)) => {
+                        if let Err(error) = open_document_from_cli_args(app, argv, cwd) {
+                            eprintln!("failed to open initial CLI document: {error}");
+                            open_welcome_window(app);
                         }
-                        None => open_welcome_window(app),
                     }
+                    None => open_welcome_window(app),
                 }
             }
         });
