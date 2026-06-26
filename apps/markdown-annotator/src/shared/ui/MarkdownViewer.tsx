@@ -8,8 +8,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import type { AnnotationType } from "@/entities/annotation/model/types";
-import type { MarkdownBlock } from "@/entities/markdown-block/model/types";
+import type { AnnotationType } from "@/entities/annotation";
+import type { MarkdownBlock } from "@/entities/markdown-block";
 import { cn } from "@/lib/utils";
 
 export type MarkdownViewerInlineAnnotation = {

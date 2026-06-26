@@ -8,6 +8,7 @@
     "dev": "turbo run dev --filter=@yoophi/markdown-annotator",
     "build": "turbo run build",
     "check-types": "turbo run check-types",
+    "test": "turbo run test",
     "preview": "turbo run preview --filter=@yoophi/markdown-annotator",
     "storybook": "turbo run storybook --filter=@yoophi/markdown-annotator",
     "build-storybook": "turbo run build-storybook --filter=@yoophi/markdown-annotator",
