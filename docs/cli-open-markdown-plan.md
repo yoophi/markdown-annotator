@@ -203,19 +203,18 @@ sequenceDiagram
 
 ## CLI 설치 기능
 
-1차 구현에서는 Rust bin target으로 `ma`가 빌드되도록 만드는 것을 우선한다.
+앱 안에서 `Install CLI` 버튼으로 릴리즈용 `ma` wrapper script를 설치한다.
 
-앱 안에서 CLI 설치 버튼까지 제공하려면 후속으로 다음 command를 추가한다.
+Tauri command:
 
 - `install_cli`
 - `check_cli_installed`
 
-설치 위치 후보:
+설치 위치:
 
-- `~/bin/ma`
 - `~/.local/bin/ma`
 
-macOS 사용자 환경에서는 shell `PATH`에 설치 위치가 들어있는지 안내가 필요하다.
+설치 script는 현재 실행 중인 앱 바이너리를 고정 경로로 가리킨다. macOS 사용자 환경에서는 shell `PATH`에 `~/.local/bin`이 들어있는지 안내가 필요하다.
 
 ## 검증 계획
 

@@ -59,6 +59,8 @@ ma docs/annotation-architecture.md
 2. macOS 앱 번들의 sibling 실행 파일
 3. `/Applications/Markdown Annotator.app/Contents/MacOS/markdown-annotator`
 
+앱 화면의 `Install CLI` 버튼을 누르면 현재 실행 중인 앱을 가리키는 wrapper script를 `~/.local/bin/ma`에 설치합니다. 설치 후 `~/.local/bin`이 shell `PATH`에 포함되어 있어야 터미널에서 `ma`를 바로 실행할 수 있습니다.
+
 개발 환경에서는 `ma-dev`를 사용합니다.
 
 ```bash

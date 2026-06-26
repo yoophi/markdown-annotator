@@ -5,8 +5,9 @@ mod inbound;
 mod infrastructure;
 
 use inbound::tauri_commands::{
-    focus_any_window, initial_cli_args, open_document_from_cli_args, open_welcome_window,
-    read_markdown_file, request_open_document_tab, request_open_document_window,
+    check_cli_installed, focus_any_window, initial_cli_args, install_cli,
+    open_document_from_cli_args, open_welcome_window, read_markdown_file,
+    request_open_document_tab, request_open_document_window,
 };
 use tauri::{Manager, RunEvent};
 
@@ -30,6 +31,8 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
+            check_cli_installed,
+            install_cli,
             read_markdown_file,
             request_open_document_tab,
             request_open_document_window
