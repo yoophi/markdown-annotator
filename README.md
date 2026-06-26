@@ -51,9 +51,16 @@ ma README.md
 ma docs/annotation-architecture.md
 ```
 
-`ma`는 설치된 앱 실행 파일을 찾아 Markdown 파일 경로를 전달합니다. 같은 파일이 이미 열려 있으면 새 창을 만들지 않고 기존 문서 창을 포커스합니다.
+`ma`는 앱 화면의 `Install CLI` 버튼이 설치하는 편의용 wrapper script입니다. 현재 실행 중인 앱 실행 파일에 Markdown 파일 경로를 전달합니다. 같은 파일이 이미 열려 있으면 새 창을 만들지 않고 기존 문서 창을 포커스합니다.
 
-앱 실행 파일 탐색 순서는 다음과 같습니다.
+빌드 산출물로는 설명적인 이름의 `markdown-annotator-cli` 바이너리를 제공합니다.
+
+```bash
+cd apps/markdown-annotator/src-tauri
+cargo build --bin markdown-annotator-cli
+```
+
+`markdown-annotator-cli`를 직접 실행해야 하는 경우에는 앱 실행 파일 탐색 순서에 따라 대상 앱을 찾습니다.
 
 1. `MARKDOWN_ANNOTATOR_APP_PATH`
 2. macOS 앱 번들의 sibling 실행 파일
@@ -167,7 +174,7 @@ pnpm check-types
 pnpm build
 pnpm build-storybook
 cd apps/markdown-annotator/src-tauri && cargo check
-cd apps/markdown-annotator/src-tauri && cargo check --bin ma --bin ma-dev
+cd apps/markdown-annotator/src-tauri && cargo check --bin markdown-annotator-cli --bin ma-dev
 ```
 
 ## 앱 구조

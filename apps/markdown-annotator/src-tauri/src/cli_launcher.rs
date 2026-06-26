@@ -105,11 +105,11 @@ fn find_release_app() -> Result<PathBuf, String> {
         ));
     }
 
-    let current_exe =
-        env::current_exe().map_err(|error| format!("failed to locate ma executable: {error}"))?;
-    let exe_dir = current_exe
-        .parent()
-        .ok_or_else(|| "failed to locate ma executable directory".to_string())?;
+    let current_exe = env::current_exe()
+        .map_err(|error| format!("failed to locate markdown-annotator-cli executable: {error}"))?;
+    let exe_dir = current_exe.parent().ok_or_else(|| {
+        "failed to locate markdown-annotator-cli executable directory".to_string()
+    })?;
 
     for candidate in release_sibling_app_candidates(exe_dir) {
         if candidate.is_file() {
