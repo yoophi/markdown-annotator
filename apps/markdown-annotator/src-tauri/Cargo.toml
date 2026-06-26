@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Markdown annotation desktop app"
 authors = ["you"]
 edition = "2024"
+default-run = "markdown-annotator"
 
 [lib]
 name = "markdown_annotator_lib"
