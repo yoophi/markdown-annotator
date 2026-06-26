@@ -56,15 +56,15 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import type { AnnotationAnchor, AnnotationDraft, AnnotationType } from "@/entities/annotation/model/types";
+import type { AnnotationAnchor, AnnotationDraft, AnnotationType } from "@/entities/annotation";
 import {
   checkCliInstalled,
   installCli,
   readMarkdownDocument,
 } from "@/entities/document/api/documentApi";
 import { exampleMarkdownDocuments } from "@/entities/document/model/examples";
-import type { MarkdownDocument } from "@/entities/document/model/types";
-import type { MarkdownBlock } from "@/entities/markdown-block/model/types";
+import type { MarkdownDocument } from "@/entities/document";
+import type { MarkdownBlock } from "@/entities/markdown-block";
 import {
   formatAnnotationsForAgent,
   type AgentPromptGoal,

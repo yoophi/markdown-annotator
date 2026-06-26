@@ -1,6 +1,6 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { requestOpenDocumentTab, requestOpenDocumentWindow } from "@/entities/document/api/documentApi";
-import type { MarkdownDocument } from "@/entities/document/model/types";
+import type { MarkdownDocument } from "@/entities/document";
 
 function isTauriRuntime() {
   return "__TAURI_INTERNALS__" in window;

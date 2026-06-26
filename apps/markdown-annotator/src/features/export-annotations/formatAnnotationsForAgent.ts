@@ -1,5 +1,5 @@
-import type { AnnotationDraft } from "@/entities/annotation/model/types";
-import type { MarkdownBlock } from "@/entities/markdown-block/model/types";
+import type { AnnotationDraft } from "@/entities/annotation";
+import type { MarkdownBlock } from "@/entities/markdown-block";
 
 export type AgentPromptGoal = "edit-document" | "review-reference" | "custom";
 

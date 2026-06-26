@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { MarkdownDocument } from "@/entities/document/model/types";
+import type { MarkdownDocument } from "@/entities/document";
 
 export type CliInstallStatus = {
   installed: boolean;
